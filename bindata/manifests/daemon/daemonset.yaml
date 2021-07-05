@@ -25,6 +25,7 @@ spec:
       nodeSelector:
         beta.kubernetes.io/os: linux
         node-role.kubernetes.io/worker:
+        network.nvidia.com/operator.mofed.wait: "false"
       tolerations:
       - operator: Exists
       serviceAccountName: sriov-network-config-daemon
