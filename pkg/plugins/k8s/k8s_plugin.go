@@ -104,16 +104,17 @@ func (p *K8sPlugin) Spec() string {
 }
 
 // OnNodeStateAdd Invoked when SriovNetworkNodeState CR is created, return if need dain and/or reboot node
-func (p *K8sPlugin) OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, err error) {
+func (p *K8sPlugin) OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, changeWithoutReboot bool, err error) {
 	glog.Info("k8s-plugin OnNodeStateAdd()")
 	return p.OnNodeStateChange(nil, state)
 }
 
 // OnNodeStateChange Invoked when SriovNetworkNodeState CR is updated, return if need dain and/or reboot node
-func (p *K8sPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, err error) {
+func (p *K8sPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, changeWithoutReboot bool, err error) {
 	glog.Info("k8s-plugin OnNodeStateChange()")
 	needDrain = false
 	needReboot = false
+	changeWithoutReboot = false
 
 	p.updateTarget.reset()
 	// TODO add check for enableOvsOffload in OperatorConfig later

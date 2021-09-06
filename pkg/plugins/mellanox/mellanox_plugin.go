@@ -60,18 +60,19 @@ func (p *MellanoxPlugin) Spec() string {
 }
 
 // OnNodeStateAdd Invoked when SriovNetworkNodeState CR is created, return if need dain and/or reboot node
-func (p *MellanoxPlugin) OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, err error) {
+func (p *MellanoxPlugin) OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, changeWithoutReboot bool, err error) {
 	glog.Info("mellanox-plugin OnNodeStateAdd()")
 
 	return p.OnNodeStateChange(nil, state)
 }
 
 // OnNodeStateChange Invoked when SriovNetworkNodeState CR is updated, return if need dain and/or reboot node
-func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, err error) {
+func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, changeWithoutReboot bool, err error) {
 	glog.Info("mellanox-Plugin OnNodeStateChange()")
 
 	needDrain = false
 	needReboot = false
+	changeWithoutReboot = false
 	err = nil
 	attributesToChange = map[string]mlnxNic{}
 	mellanoxNicsSpec = map[string]sriovnetworkv1.Interface{}
@@ -105,7 +106,7 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 	if utils.IsKernelLockdownMode(false) {
 		if len(mellanoxNicsSpec) > 0 {
 			glog.Info("Lockdown mode detected, failing on interface update for mellanox devices")
-			return false, false, fmt.Errorf("Mellanox device detected when in lockdown mode")
+			return false, false, false, fmt.Errorf("Mellanox device detected when in lockdown mode")
 		}
 		glog.Info("Lockdown mode detected, skpping mellanox nic processing")
 		return
@@ -120,23 +121,21 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 		processedNics[pciPrefix] = true
 		fwCurrent, fwNext, err := getMlnxNicFwData(ifaceSpec.PciAddress)
 		if err != nil {
-			return false, false, err
+			return false, false, false, err
 		}
 
 		isDualPort := isDualPort(ifaceSpec.PciAddress)
 		// Attributes to change
 		attrs := &mlnxNic{totalVfs: -1}
-		var changeWithoutReboot bool
 
 		var totalVfs int
 		totalVfs, needReboot, changeWithoutReboot = handleTotalVfs(fwCurrent, fwNext, attrs, ifaceSpec, isDualPort)
-		sriovEnNeedReboot, sriovEnChangeWithoutReboot := handleEnableSriov(totalVfs, fwCurrent, fwNext, attrs)
+		sriovEnNeedReboot, changeWithoutReboot := handleEnableSriov(totalVfs, fwCurrent, fwNext, attrs)
 		needReboot = needReboot || sriovEnNeedReboot
-		changeWithoutReboot = changeWithoutReboot || sriovEnChangeWithoutReboot
 
 		needLinkChange, err := handleLinkType(pciPrefix, fwCurrent, attrs)
 		if err != nil {
-			return false, false, err
+			return false, false, false, err
 		}
 
 		needReboot = needReboot || needLinkChange
@@ -162,7 +161,7 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 
 		_, fwNext, err := getMlnxNicFwData(pciAddress)
 		if err != nil {
-			return false, false, err
+			return false, false, false, err
 		}
 
 		if fwNext.totalVfs > 0 || fwNext.enableSriov {

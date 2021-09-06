@@ -33,15 +33,15 @@ func (p *IntelPlugin) Spec() string {
 }
 
 // OnNodeStateAdd Invoked when SriovNetworkNodeState CR is created, return if need dain and/or reboot node
-func (p *IntelPlugin) OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, err error) {
+func (p *IntelPlugin) OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, changeWithoutReboot bool, err error) {
 	glog.Info("intel-plugin OnNodeStateAdd()")
-	return false, false, nil
+	return false, false, false, nil
 }
 
 // OnNodeStateChange Invoked when SriovNetworkNodeState CR is updated, return if need dain and/or reboot node
-func (p *IntelPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, err error) {
+func (p *IntelPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (needDrain bool, needReboot bool, changeWithoutReboot bool, err error) {
 	glog.Info("intel-plugin OnNodeStateChange()")
-	return false, false, nil
+	return false, false, false, nil
 }
 
 // Apply config change

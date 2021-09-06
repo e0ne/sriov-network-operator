@@ -14,9 +14,9 @@ type VendorPlugin interface {
 	// Return the SpecVersion followed by plugin
 	Spec() string
 	// Invoked when SriovNetworkNodeState CR is created, return if need dain and/or reboot node
-	OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (bool, bool, error)
+	OnNodeStateAdd(state *sriovnetworkv1.SriovNetworkNodeState) (bool, bool, bool, error)
 	// Invoked when SriovNetworkNodeState CR is updated, return if need dain and/or reboot node
-	OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (bool, bool, error)
+	OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeState) (bool, bool, bool, error)
 	// Apply config change
 	Apply() error
 }
