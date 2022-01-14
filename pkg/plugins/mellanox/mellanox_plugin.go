@@ -77,8 +77,10 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 	mellanoxNicsSpec = map[string]sriovnetworkv1.Interface{}
 	processedNics := map[string]bool{}
 
+	glog.Info(fmt.Sprintf("mellanox-plugin OnNodeStateChange(): len(new.Spec.Interfaces)=%d", len(new.Spec.Interfaces)))
 	// Read mellanox NIC status once
 	if mellanoxNicsStatus == nil || len(mellanoxNicsStatus) == 0 {
+		glog.Info("mellanox-plugin OnNodeStateChange(): read NIC status once")
 		for _, iface := range new.Status.Interfaces {
 			if iface.Vendor != MellanoxVendorId {
 				continue
@@ -86,9 +88,11 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 
 			pciPrefix := getPciAddressPrefix(iface.PciAddress)
 			if ifaces, ok := mellanoxNicsStatus[pciPrefix]; ok {
+				glog.Info(fmt.Sprintf("mellanox-plugin OnNodeStateChange(): update NIC status '%s', '%s'", iface.PciAddress, iface.Name))
 				ifaces[iface.PciAddress] = iface
 			} else {
 				mellanoxNicsStatus[pciPrefix] = map[string]sriovnetworkv1.InterfaceExt{iface.PciAddress: iface}
+				glog.Info(fmt.Sprintf("mellanox-plugin OnNodeStateChange(): save NIC status '%s', '%s'", pciPrefix, iface.Name))
 			}
 		}
 	}
@@ -97,8 +101,10 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 	for _, iface := range new.Spec.Interfaces {
 		pciPrefix := getPciAddressPrefix(iface.PciAddress)
 		if _, ok := mellanoxNicsStatus[pciPrefix]; !ok {
+			glog.Info(fmt.Sprintf("mellanox-plugin OnNodeStateChange(): no need to chnage NIC '%s', '%s'", iface.PciAddress, iface.Name))
 			continue
 		}
+		glog.Info(fmt.Sprintf("mellanox-plugin OnNodeStateChange(): need to change NIC '%s', '%s'", iface.PciAddress, iface.Name))
 		mellanoxNicsSpec[iface.PciAddress] = iface
 	}
 
@@ -142,6 +148,7 @@ func (p *MellanoxPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetwork
 		needReboot = needReboot || needLinkChange
 		if needReboot || changeWithoutReboot {
 			attributesToChange[ifaceSpec.PciAddress] = *attrs
+			glog.Info(fmt.Sprintf("mellanox-plugin OnNodeStateChange(): attributesToChange update '%s', '%s'", ifaceSpec.PciAddress, ifaceSpec.Name))
 		}
 	}
 

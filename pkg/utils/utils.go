@@ -149,7 +149,7 @@ func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState) error {
 		for _, iface := range newState.Spec.Interfaces {
 			if iface.PciAddress == ifaceStatus.PciAddress {
 				configured = true
-				if SkipConfigVf(iface, ifaceStatus) {
+				if SkipConfigVf(ifaceStatus) {
 					glog.V(2).Infof("syncNodeState(): skip config VF in config daemon for %s, it shall be done by switchdev-configuration.service", iface.PciAddress)
 					break
 				}
@@ -164,7 +164,7 @@ func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState) error {
 				break
 			}
 		}
-		if !configured && ifaceStatus.NumVfs > 0 && !SkipConfigVf(sriovnetworkv1.Interface{}, ifaceStatus) {
+		if !configured && ifaceStatus.NumVfs > 0 && !SkipConfigVf(ifaceStatus) {
 			if err = resetSriovDevice(ifaceStatus); err != nil {
 				return err
 			}
@@ -173,12 +173,8 @@ func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState) error {
 	return nil
 }
 
-// skip config VF for switchdev mode or BF-2 NICs
-func SkipConfigVf(ifSpec sriovnetworkv1.Interface, ifStatus sriovnetworkv1.InterfaceExt) bool {
-	if ifSpec.EswitchMode == sriovnetworkv1.ESWITCHMODE_SWITCHDEV {
-		glog.V(2).Infof("SkipConfigVf(): skip config VF for switchdev device")
-		return true
-	}
+// skip config VF for BF-2 NICs
+func SkipConfigVf(ifStatus sriovnetworkv1.InterfaceExt) bool {
 	// Nvidia_mlx5_MT42822_BlueField-2_integrated_ConnectX-6_Dx
 	if ifStatus.Vendor == VendorMellanox && ifStatus.DeviceID == DeviceBF2 {
 		glog.V(2).Infof("SkipConfigVf(): skip config VF for BF2 device")

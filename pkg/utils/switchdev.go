@@ -35,7 +35,7 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 			if iface.PciAddress != ifaceStatus.PciAddress {
 				continue
 			}
-			if !SkipConfigVf(iface, ifaceStatus) {
+			if !SkipConfigVf(ifaceStatus) {
 				continue
 			}
 			i := sriovnetworkv1.Interface{}
