@@ -3,7 +3,7 @@ contents: |
   Description=Configures SRIOV NIC to switchdev mode
   # Removal of this file signals firstboot completion
   ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
-  # This service is used to move a SRIOV NIC to switchdev mode
+  # This service is used to configure SR-IOV NICs.
   Wants=network-pre.target
   Before=network-pre.target
 
