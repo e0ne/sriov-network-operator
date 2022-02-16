@@ -107,9 +107,10 @@ func (p *GenericPlugin) Apply() error {
 		return err
 	}
 	defer exit()
-	if err := utils.SyncNodeState(p.DesireState); err != nil {
-		return err
-	}
+	// TODO: add feature flag to use this method or systemd service
+	//if err := utils.SyncNodeState(p.DesireState); err != nil {
+	//	return err
+	//}
 	p.LastState = &sriovnetworkv1.SriovNetworkNodeState{}
 	*p.LastState = *p.DesireState
 	return nil

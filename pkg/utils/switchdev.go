@@ -28,6 +28,18 @@ func IsSwitchdevModeSpec(spec sriovnetworkv1.SriovNetworkNodeStateSpec) bool {
 	return false
 }
 
+func ReadSriovConfFile() (interfaces []sriovnetworkv1.Interface, err error) {
+	rawConfig, err := ioutil.ReadFile(switchDevConfPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := config{}
+	json.Unmarshal(rawConfig, &cfg)
+
+	return cfg.Interfaces, nil
+}
+
 func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (update bool, err error) {
 	cfg := config{}
 	for _, iface := range newState.Spec.Interfaces {
@@ -35,9 +47,9 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 			if iface.PciAddress != ifaceStatus.PciAddress {
 				continue
 			}
-			if !SkipConfigVf(iface, ifaceStatus) {
-				continue
-			}
+			//if !SkipConfigVf(iface, ifaceStatus) {
+			//	continue
+			//}
 			i := sriovnetworkv1.Interface{}
 			if iface.NumVfs > 0 {
 				i = sriovnetworkv1.Interface{
@@ -45,6 +57,7 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 					Name:       iface.Name,
 					PciAddress: iface.PciAddress,
 					NumVfs:     iface.NumVfs,
+					Mtu:        iface.Mtu,
 				}
 
 				if iface.EswitchMode == sriovnetworkv1.ESWITCHMODE_SWITCHDEV {

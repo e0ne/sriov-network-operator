@@ -130,15 +130,24 @@ func (p *K8sPlugin) OnNodeStateChange(old, new *sriovnetworkv1.SriovNetworkNodeS
 	p.updateTarget.reset()
 	// TODO add check for enableOvsOffload in OperatorConfig later
 	// Update services if switchdev required
-	if !utils.IsSwitchdevModeSpec(new.Spec) {
-		return
-	}
+	//if !utils.IsSwitchdevModeSpec(new.Spec) {
+	//	return
+	//}
 
 	// Check services
 	err = p.servicesStateUpdate()
 	if err != nil {
 		glog.Errorf("k8s-plugin OnNodeStateChange(): failed : %v", err)
 		return
+	}
+
+	if utils.IsSwitchdevModeSpec(new.Spec) {
+		// Check system services
+		err = p.systemServicesStateUpdate()
+		if err != nil {
+			glog.Errorf("k8s-plugin OnNodeStateChange(): failed : %v", err)
+			return
+		}
 	}
 
 	if p.updateTarget.needUpdate() {
@@ -366,12 +375,6 @@ func (p *K8sPlugin) systemServicesStateUpdate() error {
 func (p *K8sPlugin) servicesStateUpdate() error {
 	// Check switchdev
 	err := p.switchdevServiceStateUpdate()
-	if err != nil {
-		return err
-	}
-
-	// Check system services
-	err = p.systemServicesStateUpdate()
 	if err != nil {
 		return err
 	}

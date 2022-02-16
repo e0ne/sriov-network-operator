@@ -157,7 +157,7 @@ func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState) error {
 					glog.V(2).Infof("syncNodeState(): no need update interface %s", iface.PciAddress)
 					break
 				}
-				if err = configSriovDevice(&iface, &ifaceStatus); err != nil {
+				if err = configSriovDevice(&iface, &ifaceStatus, false); err != nil {
 					glog.Errorf("SyncNodeState(): fail to config sriov interface %s: %v", iface.PciAddress, err)
 					return err
 				}
@@ -172,15 +172,53 @@ func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState) error {
 	}
 	return nil
 }
+func ConfigSriovInterfaces(interfaces []sriovnetworkv1.Interface) error {
+	// TODO: check for IsKernelLockdownMode and Mellanox NIC
+	// TODO: call resetSriovDevice for not configured devices
+	// TODO: check for needUpdate(&iface, &ifaceStatus)
+	//if IsKernelLockdownMode(true) && hasMellanoxInterfacesInSpec(newState) {
+	//	glog.Warningf("cannot use mellanox devices when in kernel lockdown mode")
+	//	return fmt.Errorf("cannot use mellanox devices when in kernel lockdown mode")
+	//}
+	var err error
+	//for _, ifaceStatus := range newState.Status.Interfaces {
+	//configured := false
+	for _, iface := range interfaces {
+		//if iface.PciAddress == ifaceStatus.PciAddress {
+		//configured = true
+		// TODO: check if SkipConfigVf still need. Most probably it should be deleted
+		//if SkipConfigVf(iface, ifaceStatus) {
+		//	glog.V(2).Infof("syncNodeState(): skip config VF in config daemon for %s, it shall be done by switchdev-configuration.service", iface.PciAddress)
+		//	break
+		//}
+		//if !needUpdate(&iface, &ifaceStatus) {
+		//	glog.V(2).Infof("syncNodeState(): no need update interface %s", iface.PciAddress)
+		//	break
+		//}
+		if err = configSriovDevice(&iface, nil, true); err != nil {
+			glog.Errorf("SyncNodeState(): fail to config sriov interface %s: %v", iface.PciAddress, err)
+			return err
+		}
+		break
+		//}
+	}
+	//if !configured && ifaceStatus.NumVfs > 0 && !SkipConfigVf(sriovnetworkv1.Interface{}, ifaceStatus) {
+	//	if err = resetSriovDevice(ifaceStatus); err != nil {
+	//		return err
+	//	}
+	//}
+	//}
+	return nil
+}
 
-// skip config VF for switchdev mode or BF-2 NICs
+// SkipConfigVf Use systemd service to configure switchdev mode or BF-2 NICs in OpenShift
 func SkipConfigVf(ifSpec sriovnetworkv1.Interface, ifStatus sriovnetworkv1.InterfaceExt) bool {
 	if ifSpec.EswitchMode == sriovnetworkv1.ESWITCHMODE_SWITCHDEV {
 		glog.V(2).Infof("SkipConfigVf(): skip config VF for switchdev device")
 		return true
 	}
-	// Nvidia_mlx5_MT42822_BlueField-2_integrated_ConnectX-6_Dx
-	if ifStatus.Vendor == VendorMellanox && ifStatus.DeviceID == DeviceBF2 {
+	// Nvidia_mlx5_MT42822_BlueField-2_integrated_ConnectX-6_Dx in OpenShift
+	if ClusterType == ClusterTypeOpenshift && ifStatus.Vendor == VendorMellanox && ifStatus.DeviceID == DeviceBF2 {
 		glog.V(2).Infof("SkipConfigVf(): skip config VF for BF2 device")
 		return true
 	}
@@ -233,32 +271,35 @@ func needUpdate(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetworkv1.Int
 	return false
 }
 
-func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetworkv1.InterfaceExt) error {
+func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetworkv1.InterfaceExt, skipValidation bool) error {
 	glog.V(2).Infof("configSriovDevice(): config interface %s with %v", iface.PciAddress, iface)
 	var err error
-	if iface.NumVfs > ifaceStatus.TotalVfs {
-		err := fmt.Errorf("cannot config SRIOV device: NumVfs is larger than TotalVfs")
-		glog.Errorf("configSriovDevice(): fail to set NumVfs for device %s: %v", iface.PciAddress, err)
-		return err
-	}
-	// set numVFs
-	if iface.NumVfs != ifaceStatus.NumVfs {
-		err = setSriovNumVfs(iface.PciAddress, iface.NumVfs)
-		if err != nil {
-			glog.Errorf("configSriovDevice(): fail to set NumVfs for device %s", iface.PciAddress)
+	if !skipValidation {
+		if iface.NumVfs > ifaceStatus.TotalVfs {
+			err := fmt.Errorf("cannot config SRIOV device: NumVfs is larger than TotalVfs")
+			glog.Errorf("configSriovDevice(): fail to set NumVfs for device %s: %v", iface.PciAddress, err)
 			return err
 		}
 	}
+	// set numVFs
+	//if iface.NumVfs != ifaceStatus.NumVfs {
+	err = setSriovNumVfs(iface.PciAddress, iface.NumVfs)
+	if err != nil {
+		glog.Errorf("configSriovDevice(): fail to set NumVfs for device %s", iface.PciAddress)
+		return err
+	}
+	//}
 	// set PF mtu
-	if iface.Mtu > 0 && iface.Mtu != ifaceStatus.Mtu {
+	if iface.Mtu > 0 {
 		err = setNetdevMTU(iface.PciAddress, iface.Mtu)
 		if err != nil {
 			glog.Warningf("configSriovDevice(): fail to set mtu for PF %s: %v", iface.PciAddress, err)
 			return err
 		}
 	}
+
 	// Config VFs
-	if iface.NumVfs > 0 {
+	if iface.NumVfs > 0 && iface.EswitchMode != sriovnetworkv1.ESWITCHMODE_SWITCHDEV {
 		vfAddrs, err := dputils.GetVFList(iface.PciAddress)
 		if err != nil {
 			glog.Warningf("configSriovDevice(): unable to parse VFs for device %+v %q", iface.PciAddress, err)
@@ -271,11 +312,12 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 
 		for _, addr := range vfAddrs {
 			var group sriovnetworkv1.VfGroup
-			i := 0
+			//i := 0
 			var dpdkDriver string
 			var isRdma bool
 			vfID, err := dputils.GetVFID(addr)
-			for i, group = range iface.VfGroups {
+			//for i, group = range iface.VfGroups {
+			for _, group = range iface.VfGroups {
 				if err != nil {
 					glog.Warningf("configSriovDevice(): unable to get VF id %+v %q", iface.PciAddress, err)
 				}
@@ -330,13 +372,14 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 					glog.Warningf("configSriovDevice(): fail to bind default driver for device %s", addr)
 					return err
 				}
+				// TODO: fix set mtu logic
 				// only set MTU for VF with default driver
-				if iface.VfGroups[i].Mtu > 0 {
-					if err := setNetdevMTU(addr, iface.VfGroups[i].Mtu); err != nil {
-						glog.Warningf("configSriovDevice(): fail to set mtu for VF %s: %v", addr, err)
-						return err
-					}
-				}
+				//if iface.VfGroups[i].Mtu > 0 {
+				//	if err := setNetdevMTU(addr, iface.VfGroups[i].Mtu); err != nil {
+				//		glog.Warningf("configSriovDevice(): fail to set mtu for VF %s: %v", addr, err)
+				//		return err
+				//	}
+				//}
 			} else {
 				if err := BindDpdkDriver(addr, dpdkDriver); err != nil {
 					glog.Warningf("configSriovDevice(): fail to bind driver %s for device %s", dpdkDriver, addr)
@@ -345,17 +388,19 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 			}
 		}
 	}
+
+	// TODO: fix set link up logic
 	// Set PF link up
-	pfLink, err := netlink.LinkByName(ifaceStatus.Name)
-	if err != nil {
-		return err
-	}
-	if pfLink.Attrs().OperState != netlink.OperUp {
-		err = netlink.LinkSetUp(pfLink)
-		if err != nil {
-			return err
-		}
-	}
+	//pfLink, err := netlink.LinkByName(ifaceStatus.Name)
+	//if err != nil {
+	//	return err
+	//}
+	//if pfLink.Attrs().OperState != netlink.OperUp {
+	//	err = netlink.LinkSetUp(pfLink)
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 	return nil
 }
 

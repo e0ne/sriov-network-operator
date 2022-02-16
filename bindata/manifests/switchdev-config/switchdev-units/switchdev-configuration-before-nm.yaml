@@ -9,7 +9,7 @@ contents: |
 
   [Service]
   Type=oneshot
-  ExecStart=/usr/local/bin/switchdev-configuration-before-nm.sh
+  ExecStart=/usr/local/bin/sriov-config-service start
   StandardOutput=journal+console
   StandardError=journal+console
 

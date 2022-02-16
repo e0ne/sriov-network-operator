@@ -57,7 +57,8 @@ endif
 
 all: generate vet build plugins
 
-build: manager _build-sriov-network-config-daemon _build-webhook
+#build: manager _build-sriov-network-config-daemon _build-webhook _build-sriov-config-service
+build: _build-sriov-config-service
 
 _build-%:
 	WHAT=$* hack/build-go.sh
