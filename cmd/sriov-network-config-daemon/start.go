@@ -37,15 +37,17 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig string
-		nodeName   string
+		kubeconfig        string
+		nodeName          string
+		useSystemdService bool
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
-	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
+	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing")
+	startCmd.PersistentFlags().BoolVar(&startOpts.useSystemdService, "use-systemd-service", false, "Configure SR-IOV using systemd service (false by default)")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -184,6 +186,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		syncCh,
 		refreshCh,
 		platformType,
+		startOpts.useSystemdService,
 	).Run(stopCh, exitCh)
 	if err != nil {
 		glog.Errorf("failed to run daemon: %v", err)
