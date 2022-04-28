@@ -213,7 +213,7 @@ func needRebootNode(state *sriovnetworkv1.SriovNetworkNodeState, loadVfioDriver 
 		}
 	}
 
-	update, err := utils.WriteSwitchdevConfFile(state)
+	update, err := utils.WriteSwitchdevConfFile(state, utils.SriovHostConfPath)
 	if err != nil {
 		glog.Errorf("generic-plugin needRebootNode(): fail to write switchdev device config file")
 	}
