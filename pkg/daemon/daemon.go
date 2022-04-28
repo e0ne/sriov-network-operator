@@ -65,6 +65,8 @@ type Daemon struct {
 
 	platform utils.PlatformType
 
+	useSystemdService bool
+
 	client snclientset.Interface
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
 	kubeClient kubernetes.Interface
@@ -139,18 +141,20 @@ func New(
 	syncCh <-chan struct{},
 	refreshCh chan<- Message,
 	platformType utils.PlatformType,
+	useSystemdService bool,
 ) *Daemon {
 	return &Daemon{
-		name:             nodeName,
-		platform:         platformType,
-		client:           client,
-		kubeClient:       kubeClient,
+		name:              nodeName,
+		platform:          platformType,
+		useSystemdService: useSystemdService,
+		client:            client,
+		kubeClient:        kubeClient,
 		openshiftContext: openshiftContext,
-		exitCh:           exitCh,
-		stopCh:           stopCh,
-		syncCh:           syncCh,
-		refreshCh:        refreshCh,
-		nodeState:        &sriovnetworkv1.SriovNetworkNodeState{},
+		exitCh:            exitCh,
+		stopCh:            stopCh,
+		syncCh:            syncCh,
+		refreshCh:         refreshCh,
+		nodeState:         &sriovnetworkv1.SriovNetworkNodeState{},
 		drainer: &drain.Helper{
 			Client:              kubeClient,
 			Force:               true,
