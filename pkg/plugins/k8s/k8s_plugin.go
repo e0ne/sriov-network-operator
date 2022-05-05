@@ -77,8 +77,11 @@ func (u *k8sUpdateTarget) String() string {
 }
 
 const (
-	switchdevManifestPath             = "bindata/manifests/switchdev-config/"
+	bindataManifestPath               = "bindata/manifests/"
+	switchdevManifestPath             = bindataManifestPath + "switchdev-config/"
 	switchdevUnits                    = switchdevManifestPath + "switchdev-units/"
+	sriovUnits                        = bindataManifestPath + "sriov-config-service/units/"
+	sriovUnitFile                     = sriovUnits + "sriov-config-service.yaml"
 	switchdevBeforeNMUnitFile         = switchdevUnits + "switchdev-configuration-before-nm.yaml"
 	switchdevAfterNMUnitFile          = switchdevUnits + "switchdev-configuration-after-nm.yaml"
 	networkManagerUnitFile            = switchdevUnits + "NetworkManager.service.yaml"

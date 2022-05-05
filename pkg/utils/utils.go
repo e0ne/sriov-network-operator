@@ -147,41 +147,7 @@ func DiscoverSriovDevices(withUnsupported bool) ([]sriovnetworkv1.InterfaceExt, 
 // SyncNodeState Attempt to update the node state to match the desired state
 //
 func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState) error {
-	if IsKernelLockdownMode(true) && hasMellanoxInterfacesInSpec(newState) {
-		glog.Warningf("cannot use mellanox devices when in kernel lockdown mode")
-		return fmt.Errorf("cannot use mellanox devices when in kernel lockdown mode")
-	}
-	var err error
-	for _, ifaceStatus := range newState.Status.Interfaces {
-		configured := false
-		for _, iface := range newState.Spec.Interfaces {
-			if iface.PciAddress == ifaceStatus.PciAddress {
-				configured = true
-				if SkipConfigVf(iface, ifaceStatus) {
-					glog.V(2).Infof("syncNodeState(): skip config VF in config daemon for %s, it shall be done by switchdev-configuration.service", iface.PciAddress)
-					break
-				}
-				if !needUpdate(&iface, &ifaceStatus) {
-					glog.V(2).Infof("syncNodeState(): no need update interface %s", iface.PciAddress)
-					break
-				}
-				if err = configSriovDevice(&iface, &ifaceStatus); err != nil {
-					glog.Errorf("SyncNodeState(): fail to configure sriov interface %s: %v. resetting interface.", iface.PciAddress, err)
-					if resetErr := resetSriovDevice(ifaceStatus); resetErr != nil {
-						glog.Errorf("SyncNodeState(): fail to reset on error SR-IOV interface: %s", resetErr)
-					}
-					return err
-				}
-				break
-			}
-		}
-		if !configured && ifaceStatus.NumVfs > 0 && !SkipConfigVf(sriovnetworkv1.Interface{}, ifaceStatus) {
-			if err = resetSriovDevice(ifaceStatus); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return ConfigSriovInterfaces(newState.Spec.Interfaces, newState.Status.Interfaces)
 }
 
 // SkipConfigVf Use systemd service to configure switchdev mode or BF-2 NICs in OpenShift
@@ -242,6 +208,42 @@ func needUpdate(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetworkv1.Int
 		}
 	}
 	return false
+}
+
+func ConfigSriovInterfaces(interfaces []sriovnetworkv1.Interface, ifaceStatuses []sriovnetworkv1.InterfaceExt) error {
+	if IsKernelLockdownMode(true) && hasMellanoxInterfacesInSpec(ifaceStatuses, interfaces) {
+		glog.Warningf("cannot use mellanox devices when in kernel lockdown mode")
+		return fmt.Errorf("cannot use mellanox devices when in kernel lockdown mode")
+	}
+
+	var err error
+	for _, ifaceStatus := range ifaceStatuses {
+		configured := false
+		for _, iface := range interfaces {
+			if iface.PciAddress == ifaceStatus.PciAddress {
+				configured = true
+				if SkipConfigVf(iface, ifaceStatus) {
+					glog.V(2).Infof("ConfigSriovInterfaces(): skip config VF in config daemon for %s, it shall be done by switchdev-configuration.service", iface.PciAddress)
+					break
+				}
+				if !needUpdate(&iface, &ifaceStatus) {
+					glog.V(2).Infof("ConfigSriovInterfaces(): no need update interface %s", iface.PciAddress)
+					break
+				}
+				if err = configSriovDevice(&iface, &ifaceStatus); err != nil {
+					glog.Errorf("ConfigSriovInterfaces(): fail to config sriov interface %s: %v", iface.PciAddress, err)
+					return err
+				}
+				break
+			}
+		}
+		if !configured && ifaceStatus.NumVfs > 0 && !SkipConfigVf(sriovnetworkv1.Interface{}, ifaceStatus) {
+			if err = resetSriovDevice(ifaceStatus); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetworkv1.InterfaceExt) error {
@@ -750,10 +752,10 @@ func RunCommand(command string, args ...string) (string, error) {
 	return stdout.String(), err
 }
 
-func hasMellanoxInterfacesInSpec(newState *sriovnetworkv1.SriovNetworkNodeState) bool {
-	for _, ifaceStatus := range newState.Status.Interfaces {
+func hasMellanoxInterfacesInSpec(ifaceStatuses sriovnetworkv1.InterfaceExts, ifaceSpecs sriovnetworkv1.Interfaces) bool {
+	for _, ifaceStatus := range ifaceStatuses {
 		if ifaceStatus.Vendor == VendorMellanox {
-			for _, iface := range newState.Spec.Interfaces {
+			for _, iface := range ifaceSpecs {
 				if iface.PciAddress == ifaceStatus.PciAddress {
 					glog.V(2).Infof("hasMellanoxInterfacesInSpec(): Mellanox device %s (pci: %s) specified in SriovNetworkNodeState spec", ifaceStatus.Name, ifaceStatus.PciAddress)
 					return true
