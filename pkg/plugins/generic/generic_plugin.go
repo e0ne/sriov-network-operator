@@ -18,11 +18,12 @@ import (
 var PluginName = "generic_plugin"
 
 type GenericPlugin struct {
-	PluginName     string
-	SpecVersion    string
-	DesireState    *sriovnetworkv1.SriovNetworkNodeState
-	LastState      *sriovnetworkv1.SriovNetworkNodeState
-	LoadVfioDriver uint
+	PluginName        string
+	SpecVersion       string
+	DesireState       *sriovnetworkv1.SriovNetworkNodeState
+	LastState         *sriovnetworkv1.SriovNetworkNodeState
+	LoadVfioDriver    uint
+	useSystemdService bool
 }
 
 const scriptsPath = "bindata/scripts/enable-kargs.sh"
@@ -36,9 +37,10 @@ const (
 // Initialize our plugin and set up initial values
 func NewGenericPlugin() (plugin.VendorPlugin, error) {
 	return &GenericPlugin{
-		PluginName:     PluginName,
-		SpecVersion:    "1.0",
-		LoadVfioDriver: unloaded,
+		PluginName:        PluginName,
+		SpecVersion:       "1.0",
+		LoadVfioDriver:    unloaded,
+		useSystemdService: false,
 	}, nil
 }
 
@@ -109,12 +111,24 @@ func (p *GenericPlugin) Apply() error {
 		return err
 	}
 	defer exit()
-	if err := utils.SyncNodeState(p.DesireState); err != nil {
-		return err
+
+	// No need to configure SR-IOV using config daemon
+	if !p.useSystemdService {
+		if err := utils.SyncNodeState(p.DesireState); err != nil {
+			return err
+		}
 	}
 	p.LastState = &sriovnetworkv1.SriovNetworkNodeState{}
 	*p.LastState = *p.DesireState
 	return nil
+}
+
+func (p *GenericPlugin) SetSystemdFlag() {
+	p.useSystemdService = true
+}
+
+func (p *GenericPlugin) IsSystemdService() bool {
+	return p.useSystemdService
 }
 
 func needVfioDriver(state *sriovnetworkv1.SriovNetworkNodeState) bool {
