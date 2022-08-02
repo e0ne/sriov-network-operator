@@ -1,0 +1,13 @@
+contents: |
+  [Unit]
+  Description=Configures SRIOV NIC
+  # Removal of this file signals firstboot completion
+  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
+  # This service is used to confirur SR-IOV VFs on NICs
+  [Service]
+  Type=oneshot
+  ExecStart=/usr/local/bin/sriov-config-service start
+  StandardOutput=journal+console
+  StandardError=journal+console
+enabled: true
+name: sriov-config-service.service
