@@ -445,7 +445,7 @@ func (dn *Daemon) nodeStateSyncHandler(generation int64) error {
 
 	// load plugins if has not loaded
 	if len(dn.enabledPlugins) == 0 {
-		dn.enabledPlugins, err = enablePlugins(dn.platform, latestState)
+		dn.enabledPlugins, err = enablePlugins(dn.platform, dn.useSystemdService, latestState)
 		if err != nil {
 			glog.Errorf("nodeStateSyncHandler(): failed to enable vendor plugins error: %v", err)
 			return err

@@ -50,3 +50,10 @@ func (p *IntelPlugin) Apply() error {
 	glog.Info("intel-plugin Apply()")
 	return nil
 }
+
+func (p *IntelPlugin) SetSystemdFlag() {
+}
+
+func (p *IntelPlugin) IsSystemService() bool {
+	return false
+}

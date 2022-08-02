@@ -27,7 +27,7 @@ var (
 	K8sPlugin         = k8splugin.NewK8sPlugin
 )
 
-func enablePlugins(platform utils.PlatformType, ns *sriovnetworkv1.SriovNetworkNodeState) (map[string]plugin.VendorPlugin, error) {
+func enablePlugins(platform utils.PlatformType, useSystemdService bool, ns *sriovnetworkv1.SriovNetworkNodeState) (map[string]plugin.VendorPlugin, error) {
 	glog.Infof("enableVendorPlugins(): enabling plugins")
 	enabledPlugins := map[string]plugin.VendorPlugin{}
 
@@ -63,6 +63,9 @@ func enablePlugins(platform utils.PlatformType, ns *sriovnetworkv1.SriovNetworkN
 
 	pluginList := make([]string, 0, len(enabledPlugins))
 	for pluginName := range enabledPlugins {
+		if useSystemdService {
+			enabledPlugins[pluginName].SetSystemdFlag()
+		}
 		pluginList = append(pluginList, pluginName)
 	}
 	glog.Infof("enableVendorPlugins(): enabled plugins %s", pluginList)
