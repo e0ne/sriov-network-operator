@@ -7,4 +7,5 @@ FROM quay.io/centos/centos:stream8
 COPY --from=builder /go/src/github.com/k8snetworkplumbingwg/sriov-network-operator/build/_output/cmd/manager /usr/bin/sriov-network-operator
 COPY bindata /bindata
 ENV OPERATOR_NAME=sriov-network-operator
+ENV CLUSTER_TYPE=openshift
 CMD ["/usr/bin/sriov-network-operator"]

@@ -64,7 +64,7 @@ GOLANGCI_LINT_VER = v1.46.1
 
 all: generate vet build
 
-build: manager _build-sriov-network-config-daemon _build-webhook
+build: manager _build-sriov-network-config-daemon _build-webhook _build-sriov-config-service
 
 _build-%:
 	WHAT=$* hack/build-go.sh

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	SriovConfPath     = "/etc/sriov_config.json"
+	SriovConfPath     = "/etc/sriov-operator/sriov_config.json"
 	SriovHostConfPath = "/host" + SriovConfPath
 )
 

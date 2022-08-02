@@ -10,4 +10,5 @@ LABEL io.k8s.display-name="sriov-network-config-daemon" \
       io.k8s.description="This is a daemon that manage and config sriov network devices in Kubernetes cluster"
 COPY --from=builder /go/src/github.com/k8snetworkplumbingwg/sriov-network-operator/build/_output/cmd/sriov-network-config-daemon /usr/bin/
 COPY bindata /bindata
+ENV CLUSTER_TYPE=openshift
 CMD ["/usr/bin/sriov-network-config-daemon"]
