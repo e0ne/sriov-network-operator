@@ -30,6 +30,7 @@ type K8sPlugin struct {
 	openVSwitchService         *service.Service
 	networkManagerService      *service.Service
 	updateTarget               *k8sUpdateTarget
+	useSystemdService          bool
 }
 
 type k8sUpdateTarget struct {
@@ -92,10 +93,11 @@ const (
 // Initialize our plugin and set up initial values
 func NewK8sPlugin() (plugins.VendorPlugin, error) {
 	k8sPluging := &K8sPlugin{
-		PluginName:     PluginName,
-		SpecVersion:    "1.0",
-		serviceManager: service.NewServiceManager(chroot),
-		updateTarget:   &k8sUpdateTarget{},
+		PluginName:        PluginName,
+		SpecVersion:       "1.0",
+		serviceManager:    service.NewServiceManager(chroot),
+		updateTarget:      &k8sUpdateTarget{},
+		useSystemdService: false,
 	}
 
 	return k8sPluging, k8sPluging.readManifestFiles()
@@ -120,15 +122,17 @@ func (p *K8sPlugin) OnNodeStateChange(new *sriovnetworkv1.SriovNetworkNodeState)
 	p.updateTarget.reset()
 	// TODO add check for enableOvsOffload in OperatorConfig later
 	// Update services if switchdev required
-	if !utils.IsSwitchdevModeSpec(new.Spec) {
+	if !p.useSystemdService && !utils.IsSwitchdevModeSpec(new.Spec) {
 		return
 	}
 
-	// Check services
-	err = p.servicesStateUpdate()
-	if err != nil {
-		glog.Errorf("k8s-plugin OnNodeStateChange(): failed : %v", err)
-		return
+	if utils.IsSwitchdevModeSpec(new.Spec) {
+		// Check services
+		err = p.servicesStateUpdate()
+		if err != nil {
+			glog.Errorf("k8s-plugin OnNodeStateChange(): failed : %v", err)
+			return
+		}
 	}
 
 	if p.updateTarget.needUpdate() {
@@ -430,4 +434,12 @@ func (p *K8sPlugin) updateSystemService(serviceObj *service.Service) error {
 	}
 
 	return p.serviceManager.EnableService(updatedService)
+}
+
+func (p *K8sPlugin) SetSystemdFlag() {
+	p.useSystemdService = true
+}
+
+func (p *K8sPlugin) IsSystemService() bool {
+	return p.useSystemdService
 }

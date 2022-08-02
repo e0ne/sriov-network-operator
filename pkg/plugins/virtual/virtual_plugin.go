@@ -106,6 +106,13 @@ func (p *VirtualPlugin) Apply() error {
 	return nil
 }
 
+func (p *VirtualPlugin) SetSystemdFlag() {
+}
+
+func (p *VirtualPlugin) IsSystemService() bool {
+	return false
+}
+
 func needVfioDriver(state *sriovnetworkv1.SriovNetworkNodeState) bool {
 	for _, iface := range state.Spec.Interfaces {
 		for i := range iface.VfGroups {
