@@ -13,8 +13,4 @@ type VendorPlugin interface {
 	OnNodeStateChange(new *sriovnetworkv1.SriovNetworkNodeState) (bool, bool, error)
 	// Apply config change
 	Apply() error
-	// SetSystemdFlag plugin will configure SR-IOV using systemd service
-	SetSystemdFlag()
-	// IsSystemService returns true if systemd is used to configure SR-IOV
-	IsSystemService() bool
 }

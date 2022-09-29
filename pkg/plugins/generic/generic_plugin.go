@@ -2,6 +2,7 @@ package generic
 
 import (
 	"bytes"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	"os/exec"
 	"reflect"
 	"strconv"
@@ -19,12 +20,13 @@ import (
 var PluginName = "generic_plugin"
 
 type GenericPlugin struct {
-	PluginName        string
-	SpecVersion       string
-	DesireState       *sriovnetworkv1.SriovNetworkNodeState
-	LastState         *sriovnetworkv1.SriovNetworkNodeState
-	LoadVfioDriver    uint
-	useSystemdService bool
+	PluginName     string
+	SpecVersion    string
+	DesireState    *sriovnetworkv1.SriovNetworkNodeState
+	LastState      *sriovnetworkv1.SriovNetworkNodeState
+	LoadVfioDriver uint
+	RunningOnHost  bool
+	HostManager    host.HostManagerInterface
 }
 
 const scriptsPath = "bindata/scripts/enable-kargs.sh"
@@ -36,12 +38,13 @@ const (
 )
 
 // Initialize our plugin and set up initial values
-func NewGenericPlugin() (plugin.VendorPlugin, error) {
+func NewGenericPlugin(runningOnHost bool) (plugin.VendorPlugin, error) {
 	return &GenericPlugin{
-		PluginName:        PluginName,
-		SpecVersion:       "1.0",
-		LoadVfioDriver:    unloaded,
-		useSystemdService: false,
+		PluginName:     PluginName,
+		SpecVersion:    "1.0",
+		LoadVfioDriver: unloaded,
+		RunningOnHost:  runningOnHost,
+		HostManager:    host.NewHostManager(runningOnHost),
 	}, nil
 }
 
@@ -76,7 +79,7 @@ func (p *GenericPlugin) OnNodeStateChange(new *sriovnetworkv1.SriovNetworkNodeSt
 func (p *GenericPlugin) Apply() error {
 	glog.Infof("generic-plugin Apply(): desiredState=%v", p.DesireState.Spec)
 	if p.LoadVfioDriver == loading {
-		if err := utils.LoadKernelModule("vfio_pci"); err != nil {
+		if err := p.HostManager.LoadKernelModule("vfio_pci"); err != nil {
 			glog.Errorf("generic-plugin Apply(): fail to load vfio_pci kmod: %v", err)
 			return err
 		}
@@ -99,29 +102,21 @@ func (p *GenericPlugin) Apply() error {
 		return err
 	}
 
-	exit, err := utils.Chroot("/host")
-	if err != nil {
-		return err
-	}
-	defer exit()
-
-	// No need to configure SR-IOV using config daemon
-	if !p.useSystemdService {
-		if err := utils.SyncNodeState(p.DesireState, pfsToSkip); err != nil {
+	// When calling from systemd do not try to chroot
+	if !p.RunningOnHost {
+		exit, err := utils.Chroot("/host")
+		if err != nil {
 			return err
 		}
+		defer exit()
+	}
+
+	if err := utils.SyncNodeState(p.DesireState, pfsToSkip); err != nil {
+		return err
 	}
 	p.LastState = &sriovnetworkv1.SriovNetworkNodeState{}
 	*p.LastState = *p.DesireState
 	return nil
-}
-
-func (p *GenericPlugin) SetSystemdFlag() {
-	p.useSystemdService = true
-}
-
-func (p *GenericPlugin) IsSystemService() bool {
-	return p.useSystemdService
 }
 
 func needVfioDriver(state *sriovnetworkv1.SriovNetworkNodeState) bool {
@@ -215,7 +210,7 @@ func needRebootNode(state *sriovnetworkv1.SriovNetworkNodeState, loadVfioDriver 
 		}
 	}
 
-	update, err := utils.WriteSwitchdevConfFile(state, utils.SriovHostConfPath)
+	update, err := utils.WriteSwitchdevConfFile(state)
 	if err != nil {
 		glog.Errorf("generic-plugin needRebootNode(): fail to write switchdev device config file")
 	}

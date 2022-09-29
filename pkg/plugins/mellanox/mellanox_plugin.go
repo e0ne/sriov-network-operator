@@ -182,13 +182,6 @@ func (p *MellanoxPlugin) Apply() error {
 	return configFW()
 }
 
-func (p *MellanoxPlugin) SetSystemdFlag() {
-}
-
-func (p *MellanoxPlugin) IsSystemService() bool {
-	return false
-}
-
 func configFW() error {
 	glog.Info("mellanox-plugin configFW()")
 	for pciAddr, fwArgs := range attributesToChange {
