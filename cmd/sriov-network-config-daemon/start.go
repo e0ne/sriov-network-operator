@@ -41,9 +41,9 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig        string
-		nodeName          string
-		useSystemdService bool
+		kubeconfig string
+		nodeName   string
+		systemd    bool
 	}
 )
 
@@ -51,7 +51,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing")
-	startCmd.PersistentFlags().BoolVar(&startOpts.useSystemdService, "use-systemd-service", false, "Configure SR-IOV using systemd service (false by default)")
+	startCmd.PersistentFlags().BoolVar(&startOpts.systemd, "systemd", false, "use config daemon in systemd mode")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -90,7 +90,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	var config *rest.Config
 	var err error
 
-	if os.Getenv("CLUSTER_TYPE") == utils.ClusterTypeOpenshift {
+	if utils.ClusterType == utils.ClusterTypeOpenshift {
 		kubeconfig, err := clientcmd.LoadFromFile("/host/etc/kubernetes/kubeconfig")
 		if err != nil {
 			glog.Errorf("failed to load kubelet kubeconfig: %v", err)
@@ -210,7 +210,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		syncCh,
 		refreshCh,
 		platformType,
-		startOpts.useSystemdService,
+		startOpts.systemd,
 	).Run(stopCh, exitCh)
 	if err != nil {
 		glog.Errorf("failed to run daemon: %v", err)
