@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	machinev1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"os"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -88,6 +89,7 @@ func (r *SriovOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 				ConfigDaemonNodeSelector: map[string]string{},
 				LogLevel:                 2,
 				DisableDrain:             singleNode,
+				ConfigurationMode:        sriovnetworkv1.DaemonConfigurationMode,
 			}
 
 			err = r.Create(context.TODO(), defaultConfig)
@@ -120,6 +122,12 @@ func (r *SriovOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 		return reconcile.Result{}, err
 	}
 
+	// For Openshift we need to create the systemd files using a machine config
+	if constants.ClusterType == constants.ClusterTypeOpenshift && defaultConfig.Spec.ConfigurationMode == sriovnetworkv1.SystemdConfigurationMode {
+		if err = r.syncSystemdService(defaultConfig); err != nil {
+			return reconcile.Result{}, err
+		}
+	}
 	return reconcile.Result{RequeueAfter: constants.ResyncPeriod}, nil
 }
 
@@ -175,7 +183,12 @@ func (r *SriovOperatorConfigReconciler) syncConfigDaemonSet(dc *sriovnetworkv1.S
 	data.Data["ClusterType"] = utils.ClusterType
 	data.Data["DevMode"] = os.Getenv("DEV_MODE")
 	data.Data["ImagePullSecrets"] = GetImagePullSecrets()
-	data.Data["UsedSystemdMode"] = dc.Spec.EnableSystemdMode
+	if dc.Spec.ConfigurationMode == sriovnetworkv1.SystemdConfigurationMode {
+		data.Data["UsedSystemdMode"] = true
+	} else {
+		data.Data["UsedSystemdMode"] = false
+	}
+
 	envCniBinPath := os.Getenv("SRIOV_CNI_BIN_PATH")
 	if envCniBinPath == "" {
 		data.Data["CNIBinPath"] = "/var/lib/cni/bin"
@@ -298,7 +311,7 @@ func (r *SriovOperatorConfigReconciler) deleteK8sResource(in *uns.Unstructured) 
 
 func (r *SriovOperatorConfigReconciler) syncK8sResource(cr *sriovnetworkv1.SriovOperatorConfig, in *uns.Unstructured) error {
 	switch in.GetKind() {
-	case "ClusterRole", "ClusterRoleBinding", "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration":
+	case "ClusterRole", "ClusterRoleBinding", "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration", "MachineConfig":
 	default:
 		// set owner-reference only for namespaced objects
 		if err := controllerutil.SetControllerReference(cr, in, r.Scheme); err != nil {
@@ -307,6 +320,47 @@ func (r *SriovOperatorConfigReconciler) syncK8sResource(cr *sriovnetworkv1.Sriov
 	}
 	if err := apply.ApplyObject(context.TODO(), r.Client, in); err != nil {
 		return fmt.Errorf("failed to apply object %v with err: %v", in, err)
+	}
+	return nil
+}
+
+// syncSystemdService creates the Machine Config to deploy the systemd service on openshift ONLY
+func (r *SriovOperatorConfigReconciler) syncSystemdService(cr *sriovnetworkv1.SriovOperatorConfig) error {
+	logger := log.Log.WithName("syncSystemdService")
+	logger.Info("Start to sync config systemd machine config for openshift")
+
+	//TODO: list here the pools
+
+	data := render.MakeRenderData()
+	data.Data["LogLevel"] = cr.Spec.LogLevel
+	objs, err := render.RenderDir(constants.SystemdServiceOcpPath, &data)
+	if err != nil {
+		logger.Error(err, "Fail to render config daemon manifests")
+		return err
+	}
+
+	// Sync machine config
+	for _, obj := range objs {
+		if obj.GetKind() == "MachineConfig" && len(cr.Spec.ConfigDaemonNodeSelector) > 0 {
+			scheme := kscheme.Scheme
+			mc := &machinev1.ControllerConfig{}
+			err = scheme.Convert(obj, mc, nil)
+			if err != nil {
+				logger.Error(err, "Fail to convert to MachineConfig")
+				return err
+			}
+			mc.Labels = cr.Spec.ConfigDaemonNodeSelector
+			err = scheme.Convert(mc, obj, nil)
+			if err != nil {
+				logger.Error(err, "Fail to convert to Unstructured")
+				return err
+			}
+		}
+		err = r.syncK8sResource(cr, obj)
+		if err != nil {
+			logger.Error(err, "Couldn't sync SR-IoV daemons objects")
+			return err
+		}
 	}
 	return nil
 }

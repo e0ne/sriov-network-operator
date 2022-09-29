@@ -64,7 +64,7 @@ GOLANGCI_LINT_VER = v1.46.1
 
 all: generate vet build
 
-build: manager _build-sriov-network-config-daemon _build-webhook _build-sriov-config-service
+build: manager _build-sriov-network-config-daemon _build-webhook
 
 _build-%:
 	WHAT=$* hack/build-go.sh
@@ -143,6 +143,9 @@ vet:
 generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
+mock-generate: gomock
+	go generate ./...
+
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen: ## Download controller-gen locally if necessary.
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.9.0)
@@ -154,6 +157,10 @@ kustomize: ## Download kustomize locally if necessary.
 ENVTEST = $(shell pwd)/bin/setup-envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+
+GOMOCK = $(shell pwd)/bin/mockgen
+gomock:
+	$(call go-get-tool,$(GOMOCK),github.com/golang/mock/mockgen@v1.6.0)
 
 # go-get-tool will 'go install' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))

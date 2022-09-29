@@ -8,6 +8,7 @@ import (
 type SriovNetworkPoolConfigSpec struct {
 	// OvsHardwareOffloadConfig describes the OVS HWOL configuration for selected Nodes
 	OvsHardwareOffloadConfig OvsHardwareOffloadConfig `json:"ovsHardwareOffloadConfig,omitempty"`
+	SystemdMachineConfig     SystemdMachineConfig     `json:"systemdMachineConfigLabels,omitempty"`
 }
 
 type OvsHardwareOffloadConfig struct {
@@ -16,6 +17,16 @@ type OvsHardwareOffloadConfig struct {
 	// Name is the name of OvsHardwareOffloadConfig
 	// On OpenShift:
 	// Name is the name of MachineConfigPool to be enabled with OVS hardware offload
+	Name string `json:"name,omitempty"`
+}
+
+// TODO: add support for this
+type SystemdMachineConfig struct {
+	// Name is mandatory and must be unique.
+	// On Kubernetes:
+	// Name is the name of SystemdMachineConfig
+	// On OpenShift:
+	// Name is the name of MachineConfigPool to be enabled the sriov config systemd service
 	Name string `json:"name,omitempty"`
 }
 

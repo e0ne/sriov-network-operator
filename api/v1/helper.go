@@ -57,6 +57,13 @@ const (
 	SupportedNicIDConfigmap = "supported-nic-ids"
 )
 
+type ConfigurationModeType string
+
+const (
+	DaemonConfigurationMode  = "daemon"
+	SystemdConfigurationMode = "systemd"
+)
+
 func (e NetFilterType) String() string {
 	switch e {
 	case OpenstackNetworkID:

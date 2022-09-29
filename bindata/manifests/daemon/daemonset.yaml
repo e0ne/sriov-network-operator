@@ -37,6 +37,25 @@ spec:
       - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- if .UsedSystemdMode}}
+      initContainers:
+        - name: sriov-service-copy
+          image: {{.Image}}
+          imagePullPolicy: Always #TODO: change this
+          command:
+            - /bin/bash
+            - -c
+            - mkdir -p /host/var/lib/sriov/ && cp /usr/bin/sriov-network-config-daemon /host/var/lib/sriov/sriov-network-config-daemon && chcon -t bin_t /host/var/lib/sriov/sriov-network-config-daemon #Allow systemd to run the file
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 10Mi
+          volumeMounts:
+            - name: host
+              mountPath: /host
+      {{- end }}
       containers:
       - name: sriov-cni
         image: {{.SRIOVCNIImage}}
@@ -69,8 +88,8 @@ spec:
           privileged: true
         args:
           - "start"
-        {{- if .UsedSystemdMode }}
-          - --use-systemd-service
+        {{- if .UsedSystemdMode}}
+          - --systemd
         {{- end }}
         env:
           - name: NODE_NAME
