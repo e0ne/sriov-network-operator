@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -42,6 +43,7 @@ import (
 	snclientset "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/clientset/versioned"
 	sninformer "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/informers/externalversions"
 	plugin "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/systemd"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 )
 
@@ -213,13 +215,19 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	} else {
 		glog.V(0).Infof("Run(): start daemon.")
 	}
+	if dn.useSystemdService == true {
+		glog.V(0).Info("Run(): daemon running in systemd mode")
+	}
 	// Only watch own SriovNetworkNodeState CR
 	defer utilruntime.HandleCrash()
 	defer dn.workqueue.ShutDown()
 
-	tryEnableRdma()
-	tryEnableTun()
-	tryEnableVhostNet()
+	if !dn.useSystemdService {
+		hostManager := host.NewHostManager(dn.useSystemdService)
+		hostManager.TryEnableRdma()
+		hostManager.TryEnableTun()
+		hostManager.TryEnableVhostNet()
+	}
 
 	if err := dn.tryCreateUdevRuleWrapper(); err != nil {
 		return err
@@ -423,19 +431,42 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	latest := latestState.GetGeneration()
 	glog.V(0).Infof("nodeStateSyncHandler(): new generation is %d", latest)
 
-	if dn.nodeState.GetGeneration() == latest {
-		glog.V(0).Infof("nodeStateSyncHandler(): Interface not changed")
-		if latestState.Status.LastSyncError != "" ||
-			latestState.Status.SyncStatus != syncStatusSucceeded {
-			dn.refreshCh <- Message{
-				syncStatus:    syncStatusSucceeded,
-				lastSyncError: "",
+	if !dn.useSystemdService {
+		if dn.nodeState.GetGeneration() == latest {
+			glog.V(0).Infof("nodeStateSyncHandler(): Interface not changed")
+			if latestState.Status.LastSyncError != "" ||
+				latestState.Status.SyncStatus != syncStatusSucceeded {
+				dn.refreshCh <- Message{
+					syncStatus:    syncStatusSucceeded,
+					lastSyncError: "",
+				}
+				// wait for writer to refresh the status
+				<-dn.syncCh
 			}
-			// wait for writer to refresh the status
-			<-dn.syncCh
+
+			return nil
+		}
+	} else {
+		sriovResult, err := systemd.ReadSriovResult()
+		if err != nil {
+			glog.Errorf("failed to load sriov result file")
+			return err
 		}
 
-		return nil
+		if sriovResult.Generation == latest {
+			glog.V(0).Infof("nodeStateSyncHandler(): Interface not changed")
+			if sriovResult.LastSyncError == "" && sriovResult.SyncStatus == "Succeeded" {
+				dn.refreshCh <- Message{
+					syncStatus:    "Succeeded",
+					lastSyncError: "",
+				}
+				// wait for writer to refresh the status
+				<-dn.syncCh
+				return nil
+			} else {
+				return fmt.Errorf("%s", sriovResult.LastSyncError)
+			}
+		}
 	}
 
 	if latestState.GetGeneration() == 1 && len(latestState.Spec.Interfaces) == 0 {
@@ -458,7 +489,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 
 	// load plugins if has not loaded
 	if len(dn.enabledPlugins) == 0 {
-		dn.enabledPlugins, err = enablePlugins(dn.platform, dn.useSystemdService, latestState)
+		dn.enabledPlugins, err = enablePlugins(dn.platform, latestState)
 		if err != nil {
 			glog.Errorf("nodeStateSyncHandler(): failed to enable vendor plugins error: %v", err)
 			return err
@@ -486,7 +517,8 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	glog.V(0).Infof("nodeStateSyncHandler(): reqDrain %v, reqReboot %v disableDrain %v", reqDrain, reqReboot, dn.disableDrain)
 
 	for k, p := range dn.enabledPlugins {
-		if k != GenericPluginName {
+		// Skip both the general and virtual plugin apply them last
+		if k != GenericPluginName && k != VirtualPluginName {
 			err := p.Apply()
 			if err != nil {
 				glog.Errorf("nodeStateSyncHandler(): plugin %s fail to apply: %v", k, err)
@@ -525,10 +557,33 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		}
 	}
 
-	if !reqReboot {
+	// When using systemd configuration we write the file
+	if dn.useSystemdService {
+		r, err := systemd.WriteConfFile(latestState)
+		if err != nil {
+			glog.Errorf("nodeStateSyncHandler(): failed to write configuration file for systemd mode: %v", err)
+			return err
+		}
+		glog.Infof("DEBUG1: %v", r)
+		reqReboot = reqReboot || r
+	}
+
+	if !reqReboot && !dn.useSystemdService {
+		// For BareMetal machines apply the generic plugin
 		selectedPlugin, ok := dn.enabledPlugins[GenericPluginName]
 		if ok {
 			// Apply generic_plugin last
+			err = selectedPlugin.Apply()
+			if err != nil {
+				glog.Errorf("nodeStateSyncHandler(): generic_plugin fail to apply: %v", err)
+				return err
+			}
+		}
+
+		// For Virtual machines apply the virtual plugin
+		selectedPlugin, ok = dn.enabledPlugins[VirtualPluginName]
+		if ok {
+			// Apply virtual_plugin last
 			err = selectedPlugin.Apply()
 			if err != nil {
 				glog.Errorf("nodeStateSyncHandler(): generic_plugin fail to apply: %v", err)
@@ -930,44 +985,6 @@ func (dn *Daemon) drainNode() error {
 	}
 	glog.Info("drainNode(): drain complete")
 	return nil
-}
-
-func tryEnableTun() {
-	if err := utils.LoadKernelModule("tun"); err != nil {
-		glog.Errorf("tryEnableTun(): TUN kernel module not loaded: %v", err)
-	}
-}
-
-func tryEnableVhostNet() {
-	if err := utils.LoadKernelModule("vhost_net"); err != nil {
-		glog.Errorf("tryEnableVhostNet(): VHOST_NET kernel module not loaded: %v", err)
-	}
-}
-
-func tryEnableRdma() (bool, error) {
-	glog.V(2).Infof("tryEnableRdma()")
-	var stdout, stderr bytes.Buffer
-
-	cmd := exec.Command("/bin/bash", path.Join(filesystemRoot, rdmaScriptsPath))
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		glog.Errorf("tryEnableRdma(): fail to enable rdma %v: %v", err, cmd.Stderr)
-		return false, err
-	}
-	glog.V(2).Infof("tryEnableRdma(): %v", cmd.Stdout)
-
-	i, err := strconv.Atoi(strings.TrimSpace(stdout.String()))
-	if err == nil {
-		if i == 0 {
-			glog.V(2).Infof("tryEnableRdma(): RDMA kernel modules loaded")
-			return true, nil
-		} else {
-			glog.V(2).Infof("tryEnableRdma(): RDMA kernel modules not loaded")
-			return false, nil
-		}
-	}
-	return false, err
 }
 
 func tryCreateSwitchdevUdevRule(nodeState *sriovnetworkv1.SriovNetworkNodeState) error {

@@ -97,12 +97,13 @@ func (w *NodeStateStatusWriter) Run(stop <-chan struct{}, refresh <-chan Message
 			if msg.syncStatus == syncStatusSucceeded || msg.syncStatus == syncStatusFailed {
 				syncCh <- struct{}{}
 			}
-		case <-time.After(30 * time.Second):
-			glog.V(2).Info("Run(): period refresh")
-			if err := w.pollNicStatus(platformType); err != nil {
-				continue
-			}
-			w.setNodeStateStatus(msg)
+			//TODO: check if we need this at all
+			//case <-time.After(30 * time.Second):
+			//	glog.V(2).Info("Run(): period refresh")
+			//	if err := w.pollNicStatus(platformType); err != nil {
+			//		continue
+			//	}
+			//	w.setNodeStateStatus(msg)
 		}
 	}
 }
