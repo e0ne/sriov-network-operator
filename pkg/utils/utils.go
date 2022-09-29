@@ -148,10 +148,10 @@ func DiscoverSriovDevices(withUnsupported bool) ([]sriovnetworkv1.InterfaceExt, 
 // SyncNodeState Attempt to update the node state to match the desired state
 //
 func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState, pfsToConfig map[string]bool) error {
-	return ConfigSriovInterfaces(newState.Spec.Interfaces, newState.Status.Interfaces, vfsToConfig)
+	return ConfigSriovInterfaces(newState.Spec.Interfaces, newState.Status.Interfaces, pfsToConfig)
 }
 
-func ConfigSriovInterfaces(interfaces []sriovnetworkv1.Interface, ifaceStatuses []sriovnetworkv1.InterfaceExt, vfsToConfig map[string]bool) error {
+func ConfigSriovInterfaces(interfaces []sriovnetworkv1.Interface, ifaceStatuses []sriovnetworkv1.InterfaceExt, pfsToConfig map[string]bool) error {
 	if IsKernelLockdownMode(true) && hasMellanoxInterfacesInSpec(ifaceStatuses, interfaces) {
 		glog.Warningf("cannot use mellanox devices when in kernel lockdown mode")
 		return fmt.Errorf("cannot use mellanox devices when in kernel lockdown mode")

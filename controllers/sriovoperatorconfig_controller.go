@@ -123,7 +123,7 @@ func (r *SriovOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// For Openshift we need to create the systemd files using a machine config
-	if constants.ClusterType == constants.ClusterTypeOpenshift && defaultConfig.Spec.ConfigurationMode == sriovnetworkv1.SystemdConfigurationMode {
+	if utils.ClusterType == utils.ClusterTypeOpenshift && defaultConfig.Spec.ConfigurationMode == sriovnetworkv1.SystemdConfigurationMode {
 		if err = r.syncSystemdService(defaultConfig); err != nil {
 			return reconcile.Result{}, err
 		}

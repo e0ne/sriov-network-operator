@@ -151,7 +151,7 @@ func New(
 		useSystemdService: useSystemdService,
 		client:            client,
 		kubeClient:        kubeClient,
-		openshiftContext: openshiftContext,
+		openshiftContext:  openshiftContext,
 		exitCh:            exitCh,
 		stopCh:            stopCh,
 		syncCh:            syncCh,

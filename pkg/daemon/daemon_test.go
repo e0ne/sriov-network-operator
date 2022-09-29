@@ -109,6 +109,7 @@ var _ = Describe("Config Daemon", func() {
 			syncCh,
 			refreshCh,
 			utils.Baremetal,
+			false,
 		)
 
 		sut.enabledPlugins = map[string]plugin.VendorPlugin{generic.PluginName: &fake.FakePlugin{}}
