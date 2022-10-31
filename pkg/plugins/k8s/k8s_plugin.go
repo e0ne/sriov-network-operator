@@ -29,6 +29,7 @@ type K8sPlugin struct {
 	switchdevAfterNMService    *service.Service
 	openVSwitchService         *service.Service
 	networkManagerService      *service.Service
+	sriovService               *service.Service
 	updateTarget               *k8sUpdateTarget
 	useSystemdService          bool
 }
@@ -39,6 +40,7 @@ type k8sUpdateTarget struct {
 	switchdevBeforeNMRunScript bool
 	switchdevAfterNMRunScript  bool
 	switchdevUdevScript        bool
+	sriovScript                bool
 	systemServices             []*service.Service
 }
 
@@ -77,11 +79,11 @@ func (u *k8sUpdateTarget) String() string {
 }
 
 const (
-	bindataManifestPath   = "bindata/manifests/"
-	switchdevManifestPath = bindataManifestPath + "switchdev-config/"
-	switchdevUnits        = switchdevManifestPath + "switchdev-units/"
-	// sriovUnits            = bindataManifestPath + "sriov-config-service/units/"
-	// sriovUnitFile                     = sriovUnits + "sriov-config-service.yaml"
+	bindataManifestPath               = "bindata/manifests/"
+	switchdevManifestPath             = bindataManifestPath + "switchdev-config/"
+	switchdevUnits                    = switchdevManifestPath + "switchdev-units/"
+	sriovUnits                        = bindataManifestPath + "sriov-config-service/units/"
+	sriovUnitFile                     = sriovUnits + "sriov-config-service.yaml"
 	switchdevBeforeNMUnitFile         = switchdevUnits + "switchdev-configuration-before-nm.yaml"
 	switchdevAfterNMUnitFile          = switchdevUnits + "switchdev-configuration-after-nm.yaml"
 	networkManagerUnitFile            = switchdevUnits + "NetworkManager.service.yaml"
@@ -127,6 +129,14 @@ func (p *K8sPlugin) OnNodeStateChange(new *sriovnetworkv1.SriovNetworkNodeState)
 	// Update services if switchdev required
 	if !p.useSystemdService && !utils.IsSwitchdevModeSpec(new.Spec) {
 		return
+	}
+
+	if p.useSystemdService {
+		// Check sriov service
+		err = p.sriovServiceStateUpdate()
+		if err != nil {
+			glog.Errorf("k8s-plugin OnNodeStateChange(): failed : %v", err)
+		}
 	}
 
 	if utils.IsSwitchdevModeSpec(new.Spec) {
@@ -237,6 +247,16 @@ func (p *K8sPlugin) readOpenVSwitchdManifest() error {
 	return nil
 }
 
+func (p *K8sPlugin) readSriovdManifest() error {
+	sriovService, err := service.ReadServiceInjectionManifestFile(sriovUnitFile)
+	if err != nil {
+		return err
+	}
+
+	p.sriovService = sriovService
+	return nil
+}
+
 func (p *K8sPlugin) readManifestFiles() error {
 	if err := p.readSwitchdevManifest(); err != nil {
 		return err
@@ -247,6 +267,10 @@ func (p *K8sPlugin) readManifestFiles() error {
 	}
 
 	if err := p.readOpenVSwitchdManifest(); err != nil {
+		return err
+	}
+
+	if err := p.readSriovdManifest(); err != nil {
 		return err
 	}
 
@@ -284,6 +308,20 @@ func (p *K8sPlugin) switchdevServiceStateUpdate() error {
 		return err
 	}
 	p.updateTarget.switchdevUdevScript = needUpdate
+
+	return nil
+}
+
+func (p *K8sPlugin) sriovServiceStateUpdate() error {
+	exist, err := p.serviceManager.IsServiceExist(p.sriovService.Path)
+	if err != nil {
+		return err
+	}
+	if !exist {
+		return fmt.Errorf("k8s-plugin sriovServiceStateUpdate(): %q not found", p.sriovService.Name)
+	}
+
+	p.updateTarget.sriovScript = p.isSystemServiceNeedUpdate(p.sriovService)
 
 	return nil
 }
@@ -371,6 +409,25 @@ func (p *K8sPlugin) servicesStateUpdate() error {
 	err = p.systemServicesStateUpdate()
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (p *K8sPlugin) updateSriovService() error {
+	if p.updateTarget.sriovScript {
+		err := p.serviceManager.EnableService(p.sriovService)
+		if err != nil {
+			return err
+		}
+	}
+
+	if p.updateTarget.sriovScript {
+		err := ioutil.WriteFile(path.Join(chroot, p.sriovService.Path),
+			[]byte(p.switchdevBeforeNMRunScript.Contents.Inline), 0755)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
