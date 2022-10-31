@@ -447,6 +447,13 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 			return nil
 		}
 	} else {
+		// Ensure config file is created
+		_, err := systemd.WriteConfFile(latestState)
+		if err != nil {
+			glog.Errorf("nodeStateSyncHandler(): failed to write configuration file for systemd mode: %v", err)
+			return err
+		}
+
 		sriovResult, err := systemd.ReadSriovResult()
 		if err != nil {
 			glog.Errorf("failed to load sriov result file")
