@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -12,7 +13,10 @@ import (
 )
 
 const (
-	switchDevConfPath = "/host/etc/sriov_config.json"
+	SriovConfBasePath          = "/etc/sriov-operator"
+	HostSriovConfBasePath      = "/host" + SriovConfBasePath
+	SriovSwitchDevConfPath     = SriovConfBasePath + "/sriov_config.json"
+	SriovHostSwitchDevConfPath = "/host" + SriovSwitchDevConfPath
 )
 
 type config struct {
@@ -28,13 +32,21 @@ func IsSwitchdevModeSpec(spec sriovnetworkv1.SriovNetworkNodeStateSpec) bool {
 	return false
 }
 
+func findInterface(interfaces sriovnetworkv1.Interfaces, name string) (iface sriovnetworkv1.Interface, err error) {
+	for _, i := range interfaces {
+		if i.Name == name {
+			return i, nil
+		}
+	}
+	return sriovnetworkv1.Interface{}, fmt.Errorf("unable to find interface: %v", name)
+}
+
 func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (update bool, err error) {
 	// Create a map with all the PFs we will need to SKIP for systemd configuration
 	pfsToSkip, err := GetPfsToSkip(newState)
 	if err != nil {
 		return false, err
 	}
-
 	cfg := config{}
 	for _, iface := range newState.Spec.Interfaces {
 		for _, ifaceStatus := range newState.Status.Interfaces {
@@ -48,11 +60,20 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 
 			i := sriovnetworkv1.Interface{}
 			if iface.NumVfs > 0 {
+				var vfGroups []sriovnetworkv1.VfGroup = nil
+				ifc, err := findInterface(newState.Spec.Interfaces, iface.Name)
+				if err != nil {
+					glog.Errorf("WriteSwitchdevConfFile(): fail find interface: %v", err)
+				} else {
+					vfGroups = ifc.VfGroups
+				}
 				i = sriovnetworkv1.Interface{
 					// Not passing all the contents, since only NumVfs and EswitchMode can be configured by configure-switchdev.sh currently.
 					Name:       iface.Name,
 					PciAddress: iface.PciAddress,
 					NumVfs:     iface.NumVfs,
+					Mtu:        iface.Mtu,
+					VfGroups:   vfGroups,
 				}
 
 				if iface.EswitchMode == sriovnetworkv1.ESwithModeSwitchDev {
@@ -62,15 +83,25 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 			}
 		}
 	}
-	_, err = os.Stat(switchDevConfPath)
+	_, err = os.Stat(SriovHostSwitchDevConfPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			if len(cfg.Interfaces) == 0 {
 				err = nil
 				return
 			}
+
+			// Create the sriov-operator folder on the host if it doesn't exist
+			if _, err := os.Stat("/host" + SriovConfBasePath); os.IsNotExist(err) {
+				err = os.Mkdir("/host"+SriovConfBasePath, os.ModeDir)
+				if err != nil {
+					glog.Errorf("WriteConfFile(): fail to create sriov-operator folder: %v", err)
+					return false, err
+				}
+			}
+
 			glog.V(2).Infof("WriteSwitchdevConfFile(): file not existed, create it")
-			_, err = os.Create(switchDevConfPath)
+			_, err = os.Create(SriovHostSwitchDevConfPath)
 			if err != nil {
 				glog.Errorf("WriteSwitchdevConfFile(): fail to create file: %v", err)
 				return
@@ -79,7 +110,7 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 			return
 		}
 	}
-	oldContent, err := ioutil.ReadFile(switchDevConfPath)
+	oldContent, err := ioutil.ReadFile(SriovHostSwitchDevConfPath)
 	if err != nil {
 		glog.Errorf("WriteSwitchdevConfFile(): fail to read file: %v", err)
 		return
@@ -99,7 +130,7 @@ func WriteSwitchdevConfFile(newState *sriovnetworkv1.SriovNetworkNodeState) (upd
 	}
 	update = true
 	glog.V(2).Infof("WriteSwitchdevConfFile(): write '%s' to switchdev.conf", newContent)
-	err = ioutil.WriteFile(switchDevConfPath, newContent, 0644)
+	err = ioutil.WriteFile(SriovHostSwitchDevConfPath, newContent, 0644)
 	if err != nil {
 		glog.Errorf("WriteSwitchdevConfFile(): fail to write file: %v", err)
 		return
