@@ -8,6 +8,7 @@ const (
 	ConfigDaemonPath               = "./bindata/manifests/daemon"
 	InjectorWebHookPath            = "./bindata/manifests/webhook"
 	OperatorWebHookPath            = "./bindata/manifests/operator-webhook"
+	SystemdServiceOcpPath          = "./bindata/manifests/sriov-config-service/openshift"
 	ServiceCAConfigMapAnnotation   = "service.beta.openshift.io/inject-cabundle"
 	InjectorWebHookName            = "network-resources-injector-config"
 	OperatorWebHookName            = "sriov-operator-webhook-config"
