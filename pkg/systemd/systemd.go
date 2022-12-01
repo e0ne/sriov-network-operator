@@ -1,0 +1,234 @@
+package systemd
+
+import (
+	"bytes"
+	"fmt"
+	"github.com/golang/glog"
+	"gopkg.in/yaml.v3"
+	"io/ioutil"
+	"os"
+	"strings"
+
+	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
+)
+
+const (
+	SriovSystemdConfigPath           = utils.SriovConfBasePath + "/sriov-interface-config.yaml"
+	SriovSystemdResultPath           = utils.SriovConfBasePath + "/sriov-interface-result.yaml"
+	sriovSustemdSupportedNicPath     = utils.SriovConfBasePath + "/sriov-supported-nics-ids.yaml"
+	SriovHostSystemdConfigPath       = "/host" + SriovSystemdConfigPath
+	SriovHostSystemdResultPath       = "/host" + SriovSystemdResultPath
+	sriovHostSustemdSupportedNicPath = "/host" + sriovSustemdSupportedNicPath
+)
+
+type SriovConfig struct {
+	Spec            sriovnetworkv1.SriovNetworkNodeStateSpec `yaml:"spec"`
+	UnsupportedNics bool                                     `yaml:"unsupportedNics"`
+	PlatformType    utils.PlatformType                       `yaml:"platformType"`
+}
+
+type SriovResult struct {
+	SyncStatus    string `yaml:"syncStatus"`
+	LastSyncError string `yaml:"lastSyncError"`
+}
+
+func ReadConfFile() (spec *SriovConfig, err error) {
+	rawConfig, err := ioutil.ReadFile(SriovSystemdConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	err = yaml.Unmarshal(rawConfig, &spec)
+
+	return spec, err
+}
+
+func WriteConfFile(newState *sriovnetworkv1.SriovNetworkNodeState, unsupportedNics bool, platformType utils.PlatformType) (bool, error) {
+	newFile := false
+	// remove the device plugin revision as we don't need it here
+	newState.Spec.DpConfigVersion = ""
+
+	sriovConfig := &SriovConfig{
+		newState.Spec,
+		unsupportedNics,
+		platformType,
+	}
+
+	_, err := os.Stat(SriovHostSystemdConfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Create the sriov-operator folder on the host if it doesn't exist
+			if _, err := os.Stat(utils.HostSriovConfBasePath); os.IsNotExist(err) {
+				err = os.Mkdir(utils.HostSriovConfBasePath, os.ModeDir)
+				if err != nil {
+					glog.Errorf("WriteConfFile(): fail to create sriov-operator folder: %v", err)
+					return false, err
+				}
+			}
+
+			glog.V(2).Infof("WriteConfFile(): file not existed, create it")
+			_, err = os.Create(SriovHostSystemdConfigPath)
+			if err != nil {
+				glog.Errorf("WriteConfFile(): fail to create file: %v", err)
+				return false, err
+			}
+			newFile = true
+		} else {
+			return false, err
+		}
+	}
+
+	oldContent, err := ioutil.ReadFile(SriovHostSystemdConfigPath)
+	if err != nil {
+		glog.Errorf("WriteConfFile(): fail to read file: %v", err)
+		return false, err
+	}
+
+	oldContentObj := &SriovConfig{}
+	err = yaml.Unmarshal(oldContent, oldContentObj)
+	if err != nil {
+		glog.Errorf("WriteConfFile(): fail to unmarshal old file: %v", err)
+		return false, err
+	}
+
+	var newContent []byte
+	newContent, err = yaml.Marshal(sriovConfig)
+	if err != nil {
+		glog.Errorf("WriteConfFile(): fail to marshal config: %v", err)
+		return false, err
+	}
+
+	if bytes.Equal(newContent, oldContent) {
+		glog.V(2).Info("WriteConfFile(): no update")
+		return false, nil
+	}
+	glog.V(2).Infof("WriteConfFile(): previews configuration is not equal: old config:\n%s\nnew config:\n%s\n", string(oldContent), string(newContent))
+
+	// this will be used to mark the first time we create this file.
+	// this helps to avoid the first reboot after installation
+	if newFile && len(sriovConfig.Spec.Interfaces) == 0 {
+		glog.V(2).Info("WriteConfFile(): first file creation and no interfaces to configure")
+		return false, nil
+	}
+
+	glog.V(2).Infof("WriteConfFile(): write '%s' to %s", newContent, SriovHostSystemdConfigPath)
+	err = ioutil.WriteFile(SriovHostSystemdConfigPath, newContent, 0644)
+	if err != nil {
+		glog.Errorf("WriteConfFile(): fail to write file: %v", err)
+		return false, err
+	}
+
+	return true, nil
+}
+
+func WriteSriovResult(result *SriovResult) error {
+	_, err := os.Stat(SriovSystemdResultPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			glog.V(2).Infof("WriteSriovResult(): file not existed, create it")
+			_, err = os.Create(SriovSystemdResultPath)
+			if err != nil {
+				glog.Errorf("WriteSriovResult(): failed to create sriov result file on path %s: %v", SriovSystemdResultPath, err)
+				return err
+			}
+		} else {
+			glog.Errorf("WriteSriovResult(): failed to check sriov result file on path %s: %v", SriovSystemdResultPath, err)
+			return err
+		}
+	}
+
+	out, err := yaml.Marshal(result)
+	if err != nil {
+		glog.Errorf("WriteSriovResult(): failed to marshal sriov result file: %v", err)
+		return err
+	}
+
+	glog.V(2).Infof("WriteConfFile(): write '%s' to %s", string(out), SriovSystemdResultPath)
+	err = ioutil.WriteFile(SriovSystemdResultPath, out, 0644)
+	if err != nil {
+		glog.Errorf("WriteConfFile(): failed to write sriov result file on path %s: %v", SriovSystemdResultPath, err)
+		return err
+	}
+
+	return nil
+}
+
+func ReadSriovResult() (*SriovResult, error) {
+	_, err := os.Stat(SriovHostSystemdResultPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			glog.V(2).Infof("ReadSriovResult(): file not existed, return empty result")
+			return &SriovResult{}, err
+		} else {
+			glog.Errorf("ReadSriovResult(): failed to check sriov result file on path %s: %v", SriovHostSystemdResultPath, err)
+			return nil, err
+		}
+	}
+
+	rawConfig, err := ioutil.ReadFile(SriovHostSystemdResultPath)
+	if err != nil {
+		glog.Errorf("ReadSriovResult(): failed to read sriov result file on path %s: %v", SriovHostSystemdResultPath, err)
+		return nil, err
+	}
+
+	result := &SriovResult{}
+	err = yaml.Unmarshal(rawConfig, &result)
+	if err != nil {
+		glog.Errorf("ReadSriovResult(): failed to unmarshal sriov result file on path %s: %v", SriovHostSystemdResultPath, err)
+		return nil, err
+	}
+	return result, err
+}
+
+func WriteSriovSupportedNics() error {
+	_, err := os.Stat(sriovHostSustemdSupportedNicPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			glog.V(2).Infof("WriteSriovSupportedNics(): file not existed, create it")
+			_, err = os.Create(sriovHostSustemdSupportedNicPath)
+			if err != nil {
+				glog.Errorf("WriteSriovSupportedNics(): failed to create sriov supporter nics ids file on path %s: %v", sriovHostSustemdSupportedNicPath, err)
+				return err
+			}
+		} else {
+			glog.Errorf("WriteSriovSupportedNics(): failed to check sriov supporter nics ids file on path %s: %v", sriovHostSustemdSupportedNicPath, err)
+			return err
+		}
+	}
+
+	rawNicList := []byte{}
+	for _, line := range sriovnetworkv1.NicIDMap {
+		rawNicList = append(rawNicList, []byte(fmt.Sprintf("%s\n", line))...)
+	}
+
+	err = ioutil.WriteFile(sriovHostSustemdSupportedNicPath, rawNicList, 0644)
+	if err != nil {
+		glog.Errorf("WriteSriovSupportedNics(): failed to write sriov supporter nics ids file on path %s: %v", sriovHostSustemdSupportedNicPath, err)
+		return err
+	}
+
+	return nil
+}
+
+func ReadSriovSupportedNics() ([]string, error) {
+	_, err := os.Stat(sriovSustemdSupportedNicPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			glog.V(2).Infof("ReadSriovSupportedNics(): file not existed, return empty result")
+			return nil, err
+		} else {
+			glog.Errorf("ReadSriovSupportedNics(): failed to check sriov supporter nics file on path %s: %v", sriovSustemdSupportedNicPath, err)
+			return nil, err
+		}
+	}
+
+	rawConfig, err := ioutil.ReadFile(sriovSustemdSupportedNicPath)
+	if err != nil {
+		glog.Errorf("ReadSriovSupportedNics(): failed to read sriov supporter nics file on path %s: %v", sriovSustemdSupportedNicPath, err)
+		return nil, err
+	}
+
+	lines := strings.Split(string(rawConfig), "\n")
+	return lines, nil
+}
