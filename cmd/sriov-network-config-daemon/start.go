@@ -43,13 +43,15 @@ var (
 	startOpts struct {
 		kubeconfig string
 		nodeName   string
+		systemd    bool
 	}
 )
 
 func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
-	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
+	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing")
+	startCmd.PersistentFlags().BoolVar(&startOpts.systemd, "systemd", false, "use config daemon in systemd mode")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {
@@ -88,7 +90,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	var config *rest.Config
 	var err error
 
-	if os.Getenv("CLUSTER_TYPE") == utils.ClusterTypeOpenshift {
+	if utils.ClusterType == utils.ClusterTypeOpenshift {
 		kubeconfig, err := clientcmd.LoadFromFile("/host/etc/kubernetes/kubeconfig")
 		if err != nil {
 			glog.Errorf("failed to load kubelet kubeconfig: %v", err)
@@ -182,7 +184,7 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 	glog.V(0).Infof("Running on platform: %s", platformType.String())
 
 	var namespace = os.Getenv("NAMESPACE")
-	if err := sriovnetworkv1.InitNicIDMap(kubeclient, namespace); err != nil {
+	if err := sriovnetworkv1.InitNicIDMapFromConfigMap(kubeclient, namespace); err != nil {
 		glog.Errorf("failed to run init NicIdMap: %v", err)
 	}
 
@@ -208,6 +210,8 @@ func runStartCmd(cmd *cobra.Command, args []string) {
 		syncCh,
 		refreshCh,
 		platformType,
+		startOpts.systemd,
+		devMode,
 	).Run(stopCh, exitCh)
 	if err != nil {
 		glog.Errorf("failed to run daemon: %v", err)

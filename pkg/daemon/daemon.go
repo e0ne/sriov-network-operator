@@ -41,7 +41,9 @@ import (
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	snclientset "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/clientset/versioned"
 	sninformer "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/informers/externalversions"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	plugin "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/systemd"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 )
 
@@ -64,6 +66,10 @@ type Daemon struct {
 	name string
 
 	platform utils.PlatformType
+
+	useSystemdService bool
+
+	devMode bool
 
 	client snclientset.Interface
 	// kubeClient allows interaction with Kubernetes, including the node we are running on.
@@ -139,18 +145,22 @@ func New(
 	syncCh <-chan struct{},
 	refreshCh chan<- Message,
 	platformType utils.PlatformType,
+	useSystemdService bool,
+	devMode bool,
 ) *Daemon {
 	return &Daemon{
-		name:             nodeName,
-		platform:         platformType,
-		client:           client,
-		kubeClient:       kubeClient,
-		openshiftContext: openshiftContext,
-		exitCh:           exitCh,
-		stopCh:           stopCh,
-		syncCh:           syncCh,
-		refreshCh:        refreshCh,
-		nodeState:        &sriovnetworkv1.SriovNetworkNodeState{},
+		name:              nodeName,
+		platform:          platformType,
+		useSystemdService: useSystemdService,
+		devMode:           devMode,
+		client:            client,
+		kubeClient:        kubeClient,
+		openshiftContext:  openshiftContext,
+		exitCh:            exitCh,
+		stopCh:            stopCh,
+		syncCh:            syncCh,
+		refreshCh:         refreshCh,
+		nodeState:         &sriovnetworkv1.SriovNetworkNodeState{},
 		drainer: &drain.Helper{
 			Client:              kubeClient,
 			Force:               true,
@@ -209,13 +219,19 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	} else {
 		glog.V(0).Infof("Run(): start daemon.")
 	}
+	if dn.useSystemdService == true {
+		glog.V(0).Info("Run(): daemon running in systemd mode")
+	}
 	// Only watch own SriovNetworkNodeState CR
 	defer utilruntime.HandleCrash()
 	defer dn.workqueue.ShutDown()
 
-	tryEnableRdma()
-	tryEnableTun()
-	tryEnableVhostNet()
+	if !dn.useSystemdService {
+		hostManager := host.NewHostManager(dn.useSystemdService)
+		hostManager.TryEnableRdma()
+		hostManager.TryEnableTun()
+		hostManager.TryEnableVhostNet()
+	}
 
 	if err := dn.tryCreateUdevRuleWrapper(); err != nil {
 		return err
@@ -273,7 +289,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	}
 
 	glog.Info("Starting workers")
-	// Launch one workers to process
+	// Launch one worker to process
 	go wait.Until(dn.runWorker, time.Second, stopCh)
 	glog.Info("Started workers")
 
@@ -411,6 +427,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	var err error
 	// Get the latest NodeState
 	var latestState *sriovnetworkv1.SriovNetworkNodeState
+	var sriovResult *systemd.SriovResult
 	latestState, err = dn.client.SriovnetworkV1().SriovNetworkNodeStates(namespace).Get(context.Background(), dn.name, metav1.GetOptions{})
 	if err != nil {
 		glog.Warningf("nodeStateSyncHandler(): Failed to fetch node state %s: %v", dn.name, err)
@@ -418,6 +435,15 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	}
 	latest := latestState.GetGeneration()
 	glog.V(0).Infof("nodeStateSyncHandler(): new generation is %d", latest)
+
+	reqReboot := false
+	reqDrain := false
+
+	if utils.ClusterType == utils.ClusterTypeOpenshift && !dn.openshiftContext.IsHypershift() {
+		if err = dn.getNodeMachinePool(); err != nil {
+			return err
+		}
+	}
 
 	if dn.nodeState.GetGeneration() == latest {
 		glog.V(0).Infof("nodeStateSyncHandler(): Interface not changed")
@@ -447,12 +473,35 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		return nil
 	}
 
+	if dn.useSystemdService {
+		sriovResult, err = systemd.ReadSriovResult()
+		if err != nil {
+			glog.Errorf("nodeStateSyncHandler(): failed to load sriov result file from host: %v", err)
+			return err
+		}
+
+		if dn.nodeState.GetGeneration() == latest {
+			if sriovResult.LastSyncError != "" || sriovResult.SyncStatus != syncStatusSucceeded {
+				glog.Infof("nodeStateSyncHandler(): sync failed systemd service error: %s", sriovResult.LastSyncError)
+				dn.nodeState = latestState.DeepCopy()
+
+				// add the error but don't requeue
+				dn.refreshCh <- Message{
+					syncStatus:    syncStatusFailed,
+					lastSyncError: sriovResult.LastSyncError,
+				}
+				<-dn.syncCh
+				return nil
+			}
+		}
+	}
+
 	dn.refreshCh <- Message{
 		syncStatus:    "InProgress",
 		lastSyncError: "",
 	}
 
-	// load plugins if has not loaded
+	// load plugins if it has not loaded
 	if len(dn.enabledPlugins) == 0 {
 		dn.enabledPlugins, err = enablePlugins(dn.platform, latestState)
 		if err != nil {
@@ -461,8 +510,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		}
 	}
 
-	reqReboot := false
-	reqDrain := false
+	// check if any of the plugins required to drain or reboot the node
 	for k, p := range dn.enabledPlugins {
 		d, r := false, false
 		if dn.nodeState.GetName() == "" {
@@ -479,10 +527,31 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		reqDrain = reqDrain || d
 		reqReboot = reqReboot || r
 	}
-	glog.V(0).Infof("nodeStateSyncHandler(): reqDrain %v, reqReboot %v disableDrain %v", reqDrain, reqReboot, dn.disableDrain)
+
+	// When running using systemd check if the applied configuration is the latest one
+	// or there is a new config we need to apply
+	// When using systemd configuration we write the file
+	if dn.useSystemdService {
+		r, err := systemd.WriteConfFile(latestState, dn.devMode, dn.platform)
+		if err != nil {
+			glog.Errorf("nodeStateSyncHandler(): failed to write configuration file for systemd mode: %v", err)
+			return err
+		}
+		reqDrain = reqDrain || r
+		reqReboot = reqReboot || r
+		glog.V(0).Infof("nodeStateSyncHandler(): systemd mode reqDrain %v, reqReboot %v disableDrain %v", r, r, dn.disableDrain)
+
+		err = systemd.WriteSriovSupportedNics()
+		if err != nil {
+			glog.Errorf("nodeStateSyncHandler(): failed to write supported nic ids file for systemd mode: %v", err)
+			return err
+		}
+	}
+	glog.V(0).Infof("nodeStateSyncHandler(): aggregated daemon reqDrain %v, reqReboot %v disableDrain %v", reqDrain, reqReboot, dn.disableDrain)
 
 	for k, p := range dn.enabledPlugins {
-		if k != GenericPluginName {
+		// Skip both the general and virtual plugin apply them last
+		if k != GenericPluginName && k != VirtualPluginName {
 			err := p.Apply()
 			if err != nil {
 				glog.Errorf("nodeStateSyncHandler(): plugin %s fail to apply: %v", k, err)
@@ -490,11 +559,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 			}
 		}
 	}
-	if utils.ClusterType == utils.ClusterTypeOpenshift && !dn.openshiftContext.IsHypershift() {
-		if err = dn.getNodeMachinePool(); err != nil {
-			return err
-		}
-	}
+
 	if reqDrain {
 		if !dn.isNodeDraining() {
 			if !dn.disableDrain {
@@ -521,10 +586,22 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		}
 	}
 
-	if !reqReboot {
+	if !reqReboot && !dn.useSystemdService {
+		// For BareMetal machines apply the generic plugin
 		selectedPlugin, ok := dn.enabledPlugins[GenericPluginName]
 		if ok {
 			// Apply generic_plugin last
+			err = selectedPlugin.Apply()
+			if err != nil {
+				glog.Errorf("nodeStateSyncHandler(): generic_plugin fail to apply: %v", err)
+				return err
+			}
+		}
+
+		// For Virtual machines apply the virtual plugin
+		selectedPlugin, ok = dn.enabledPlugins[VirtualPluginName]
+		if ok {
+			// Apply virtual_plugin last
 			err = selectedPlugin.Apply()
 			if err != nil {
 				glog.Errorf("nodeStateSyncHandler(): generic_plugin fail to apply: %v", err)
@@ -560,9 +637,16 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	}
 	glog.Info("nodeStateSyncHandler(): sync succeeded")
 	dn.nodeState = latestState.DeepCopy()
-	dn.refreshCh <- Message{
-		syncStatus:    syncStatusSucceeded,
-		lastSyncError: "",
+	if dn.useSystemdService {
+		dn.refreshCh <- Message{
+			syncStatus:    sriovResult.SyncStatus,
+			lastSyncError: sriovResult.LastSyncError,
+		}
+	} else {
+		dn.refreshCh <- Message{
+			syncStatus:    syncStatusSucceeded,
+			lastSyncError: "",
+		}
 	}
 	// wait for writer to refresh the status
 	<-dn.syncCh
@@ -926,44 +1010,6 @@ func (dn *Daemon) drainNode() error {
 	}
 	glog.Info("drainNode(): drain complete")
 	return nil
-}
-
-func tryEnableTun() {
-	if err := utils.LoadKernelModule("tun"); err != nil {
-		glog.Errorf("tryEnableTun(): TUN kernel module not loaded: %v", err)
-	}
-}
-
-func tryEnableVhostNet() {
-	if err := utils.LoadKernelModule("vhost_net"); err != nil {
-		glog.Errorf("tryEnableVhostNet(): VHOST_NET kernel module not loaded: %v", err)
-	}
-}
-
-func tryEnableRdma() (bool, error) {
-	glog.V(2).Infof("tryEnableRdma()")
-	var stdout, stderr bytes.Buffer
-
-	cmd := exec.Command("/bin/bash", path.Join(filesystemRoot, rdmaScriptsPath))
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		glog.Errorf("tryEnableRdma(): fail to enable rdma %v: %v", err, cmd.Stderr)
-		return false, err
-	}
-	glog.V(2).Infof("tryEnableRdma(): %v", cmd.Stdout)
-
-	i, err := strconv.Atoi(strings.TrimSpace(stdout.String()))
-	if err == nil {
-		if i == 0 {
-			glog.V(2).Infof("tryEnableRdma(): RDMA kernel modules loaded")
-			return true, nil
-		} else {
-			glog.V(2).Infof("tryEnableRdma(): RDMA kernel modules not loaded")
-			return false, nil
-		}
-	}
-	return false, err
 }
 
 func tryCreateSwitchdevUdevRule(nodeState *sriovnetworkv1.SriovNetworkNodeState) error {
