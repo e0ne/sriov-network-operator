@@ -38,7 +38,7 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var waitingTime time.Duration = 20 * time.Minute
+var waitingTime = 20 * time.Minute
 var sriovNetworkName = "test-sriovnetwork"
 var snoTimeoutMultiplier time.Duration = 0
 
