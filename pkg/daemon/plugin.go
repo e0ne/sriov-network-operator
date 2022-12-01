@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"fmt"
-
 	"github.com/golang/glog"
 
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -24,6 +23,7 @@ var (
 	GenericPlugin     = genericplugin.NewGenericPlugin
 	GenericPluginName = genericplugin.PluginName
 	VirtualPlugin     = virtualplugin.NewVirtualPlugin
+	VirtualPluginName = virtualplugin.PluginName
 	K8sPlugin         = k8splugin.NewK8sPlugin
 )
 
@@ -32,7 +32,7 @@ func enablePlugins(platform utils.PlatformType, ns *sriovnetworkv1.SriovNetworkN
 	enabledPlugins := map[string]plugin.VendorPlugin{}
 
 	if platform == utils.VirtualOpenStack {
-		virtualPlugin, err := VirtualPlugin()
+		virtualPlugin, err := VirtualPlugin(false)
 		if err != nil {
 			glog.Errorf("enableVendorPlugins(): failed to load the virtual plugin error: %v", err)
 			return nil, err
@@ -53,7 +53,7 @@ func enablePlugins(platform utils.PlatformType, ns *sriovnetworkv1.SriovNetworkN
 			}
 			enabledPlugins[k8sPlugin.Name()] = k8sPlugin
 		}
-		genericPlugin, err := GenericPlugin()
+		genericPlugin, err := GenericPlugin(false)
 		if err != nil {
 			glog.Errorf("enableVendorPlugins(): failed to load the generic plugin error: %v", err)
 			return nil, err
