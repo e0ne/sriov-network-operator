@@ -14,12 +14,15 @@ import (
 )
 
 const (
-	SriovSystemdConfigPath           = utils.SriovConfBasePath + "/sriov-interface-config.yaml"
-	SriovSystemdResultPath           = utils.SriovConfBasePath + "/sriov-interface-result.yaml"
-	sriovSustemdSupportedNicPath     = utils.SriovConfBasePath + "/sriov-supported-nics-ids.yaml"
-	SriovHostSystemdConfigPath       = "/host" + SriovSystemdConfigPath
-	SriovHostSystemdResultPath       = "/host" + SriovSystemdResultPath
-	sriovHostSustemdSupportedNicPath = "/host" + sriovSustemdSupportedNicPath
+	SriovSystemdConfigPath        = utils.SriovConfBasePath + "/sriov-interface-config.yaml"
+	SriovSystemdResultPath        = utils.SriovConfBasePath + "/sriov-interface-result.yaml"
+	sriovSystemdSupportedNicPath  = utils.SriovConfBasePath + "/sriov-supported-nics-ids.yaml"
+	sriovSystemdServiceBinaryPath = "/var/lib/sriov/sriov-network-config-daemon"
+
+	SriovHostSystemdConfigPath        = "/host" + SriovSystemdConfigPath
+	SriovHostSystemdResultPath        = "/host" + SriovSystemdResultPath
+	sriovHostSustemdSupportedNicPath  = "/host" + sriovSystemdSupportedNicPath
+	sriovHostSystemdServiceBinaryPath = "/host" + sriovSystemdServiceBinaryPath
 )
 
 type SriovConfig struct {
@@ -212,23 +215,47 @@ func WriteSriovSupportedNics() error {
 }
 
 func ReadSriovSupportedNics() ([]string, error) {
-	_, err := os.Stat(sriovSustemdSupportedNicPath)
+	_, err := os.Stat(sriovSystemdSupportedNicPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			glog.V(2).Infof("ReadSriovSupportedNics(): file not existed, return empty result")
 			return nil, err
 		} else {
-			glog.Errorf("ReadSriovSupportedNics(): failed to check sriov supporter nics file on path %s: %v", sriovSustemdSupportedNicPath, err)
+			glog.Errorf("ReadSriovSupportedNics(): failed to check sriov supporter nics file on path %s: %v", sriovSystemdSupportedNicPath, err)
 			return nil, err
 		}
 	}
 
-	rawConfig, err := ioutil.ReadFile(sriovSustemdSupportedNicPath)
+	rawConfig, err := ioutil.ReadFile(sriovSystemdSupportedNicPath)
 	if err != nil {
-		glog.Errorf("ReadSriovSupportedNics(): failed to read sriov supporter nics file on path %s: %v", sriovSustemdSupportedNicPath, err)
+		glog.Errorf("ReadSriovSupportedNics(): failed to read sriov supporter nics file on path %s: %v", sriovSystemdSupportedNicPath, err)
 		return nil, err
 	}
 
 	lines := strings.Split(string(rawConfig), "\n")
 	return lines, nil
+}
+
+func CleanSriovFilesFromHost() error {
+	err := os.Remove(SriovHostSystemdConfigPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	err = os.Remove(SriovHostSystemdResultPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	err = os.Remove(sriovHostSustemdSupportedNicPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	err = os.Remove(sriovHostSystemdServiceBinaryPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return nil
 }

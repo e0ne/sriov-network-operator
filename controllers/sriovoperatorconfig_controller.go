@@ -123,7 +123,7 @@ func (r *SriovOperatorConfigReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// For Openshift we need to create the systemd files using a machine config
-	if utils.ClusterType == utils.ClusterTypeOpenshift && defaultConfig.Spec.ConfigurationMode == sriovnetworkv1.SystemdConfigurationMode {
+	if utils.ClusterType == utils.ClusterTypeOpenshift {
 		if err = r.syncSystemdService(defaultConfig); err != nil {
 			return reconcile.Result{}, err
 		}
@@ -327,10 +327,30 @@ func (r *SriovOperatorConfigReconciler) syncK8sResource(cr *sriovnetworkv1.Sriov
 // syncSystemdService creates the Machine Config to deploy the systemd service on openshift ONLY
 func (r *SriovOperatorConfigReconciler) syncSystemdService(cr *sriovnetworkv1.SriovOperatorConfig) error {
 	logger := log.Log.WithName("syncSystemdService")
+
+	if cr.Spec.ConfigurationMode != sriovnetworkv1.SystemdConfigurationMode {
+		obj := &machinev1.MachineConfig{}
+		err := r.Get(context.TODO(), types.NamespacedName{Name: constants.SystemdServiceOcpMachineConfigName}, obj)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+
+			logger.Error(err, "failed to get machine config for the sriov-systemd-service")
+			return err
+		}
+
+		logger.Info("Systemd service was deployed but the operator is now operating on daemonset mode, removing the machine config")
+		err = r.Delete(context.TODO(), obj)
+		if err != nil {
+			logger.Error(err, "failed to remove the systemd service machine config")
+			return err
+		}
+
+		return nil
+	}
+
 	logger.Info("Start to sync config systemd machine config for openshift")
-
-	//TODO: list here the pools
-
 	data := render.MakeRenderData()
 	data.Data["LogLevel"] = cr.Spec.LogLevel
 	objs, err := render.RenderDir(constants.SystemdServiceOcpPath, &data)
@@ -362,5 +382,6 @@ func (r *SriovOperatorConfigReconciler) syncSystemdService(cr *sriovnetworkv1.Sr
 			return err
 		}
 	}
+
 	return nil
 }

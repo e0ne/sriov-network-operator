@@ -231,6 +231,10 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 		hostManager.TryEnableRdma()
 		hostManager.TryEnableTun()
 		hostManager.TryEnableVhostNet()
+		err := systemd.CleanSriovFilesFromHost()
+		if err != nil {
+			glog.Warningf("failed to remove all the systemd sriov files error: %v", err)
+		}
 	}
 
 	if err := dn.tryCreateUdevRuleWrapper(); err != nil {
