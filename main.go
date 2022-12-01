@@ -202,7 +202,7 @@ func main() {
 func initNicIDMap() error {
 	namespace := os.Getenv("NAMESPACE")
 	kubeclient := kubernetes.NewForConfigOrDie(ctrl.GetConfigOrDie())
-	if err := sriovnetworkv1.InitNicIDMap(kubeclient, namespace); err != nil {
+	if err := sriovnetworkv1.InitNicIDMapFromConfigMap(kubeclient, namespace); err != nil {
 		return err
 	}
 
