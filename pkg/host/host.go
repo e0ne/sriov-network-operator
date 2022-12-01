@@ -2,11 +2,12 @@ package host
 
 import (
 	"fmt"
-	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 	"os"
 	"strings"
 
 	"github.com/golang/glog"
+
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 )
 
 const (
@@ -138,7 +139,7 @@ func (h *HostManager) TryEnableRdma() (bool, error) {
 	}
 
 	if isUbuntuSystem {
-
+		return h.enableRDMAOnUbuntuMachine()
 	}
 
 	osName, err := h.getOSPrettyName()

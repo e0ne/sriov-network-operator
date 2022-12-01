@@ -51,7 +51,7 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing")
-	startCmd.PersistentFlags().BoolVar(&startOpts.systemd, "systemd", false, "use config daemon in systemd mode")
+	startCmd.PersistentFlags().BoolVar(&startOpts.systemd, "use-systemd-service", false, "use config daemon in systemd mode")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) {

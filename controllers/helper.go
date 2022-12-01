@@ -28,6 +28,10 @@ var webhooks = map[string](string){
 	constants.OperatorWebHookName: constants.OperatorWebHookPath,
 }
 
+const (
+	machineConfigCRDName = "MachineConfig"
+)
+
 var namespace = os.Getenv("NAMESPACE")
 
 func GetImagePullSecrets() []string {

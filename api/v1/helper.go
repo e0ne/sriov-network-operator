@@ -91,9 +91,7 @@ func InitNicIDMapFromConfigMap(client kubernetes.Interface, namespace string) er
 }
 
 func InitNicIDMapFromList(idList []string) {
-	for _, v := range idList {
-		NicIDMap = append(NicIDMap, v)
-	}
+	NicIDMap = append(NicIDMap, idList...)
 }
 
 func IsSupportedVendor(vendorID string) bool {

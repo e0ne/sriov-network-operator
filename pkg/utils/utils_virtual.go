@@ -128,7 +128,7 @@ func getOpenstackDataFromConfigDrive(useHostPath bool) (metaData *OSPMetaData, n
 	networkData = &OSPNetworkData{}
 	glog.Infof("reading OpenStack meta_data from config-drive")
 	var metadataf *os.File
-	ospMetaDataFilePath := ospNetworkDataFile
+	ospMetaDataFilePath := ospMetaDataFile
 	if useHostPath {
 		ospMetaDataFilePath = ospHostMetaDataFile
 	}

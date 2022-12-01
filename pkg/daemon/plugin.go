@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"fmt"
+
 	"github.com/golang/glog"
 
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -27,7 +28,7 @@ var (
 	K8sPlugin         = k8splugin.NewK8sPlugin
 )
 
-func enablePlugins(platform utils.PlatformType, ns *sriovnetworkv1.SriovNetworkNodeState) (map[string]plugin.VendorPlugin, error) {
+func enablePlugins(platform utils.PlatformType, useSystemdService bool, ns *sriovnetworkv1.SriovNetworkNodeState) (map[string]plugin.VendorPlugin, error) {
 	glog.Infof("enableVendorPlugins(): enabling plugins")
 	enabledPlugins := map[string]plugin.VendorPlugin{}
 
@@ -46,7 +47,7 @@ func enablePlugins(platform utils.PlatformType, ns *sriovnetworkv1.SriovNetworkN
 		enabledPlugins = enabledVendorPlugins
 
 		if utils.ClusterType != utils.ClusterTypeOpenshift {
-			k8sPlugin, err := K8sPlugin()
+			k8sPlugin, err := K8sPlugin(useSystemdService)
 			if err != nil {
 				glog.Errorf("enableVendorPlugins(): failed to load the k8s plugin error: %v", err)
 				return nil, err

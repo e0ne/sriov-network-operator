@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	machinev1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"os"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	machinev1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
 
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	apply "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/apply"
@@ -311,7 +312,7 @@ func (r *SriovOperatorConfigReconciler) deleteK8sResource(in *uns.Unstructured) 
 
 func (r *SriovOperatorConfigReconciler) syncK8sResource(cr *sriovnetworkv1.SriovOperatorConfig, in *uns.Unstructured) error {
 	switch in.GetKind() {
-	case "ClusterRole", "ClusterRoleBinding", "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration", "MachineConfig":
+	case "ClusterRole", "ClusterRoleBinding", "MutatingWebhookConfiguration", "ValidatingWebhookConfiguration", machineConfigCRDName:
 	default:
 		// set owner-reference only for namespaced objects
 		if err := controllerutil.SetControllerReference(cr, in, r.Scheme); err != nil {
@@ -361,7 +362,7 @@ func (r *SriovOperatorConfigReconciler) syncSystemdService(cr *sriovnetworkv1.Sr
 
 	// Sync machine config
 	for _, obj := range objs {
-		if obj.GetKind() == "MachineConfig" && len(cr.Spec.ConfigDaemonNodeSelector) > 0 {
+		if obj.GetKind() == machineConfigCRDName && len(cr.Spec.ConfigDaemonNodeSelector) > 0 {
 			scheme := kscheme.Scheme
 			mc := &machinev1.ControllerConfig{}
 			err = scheme.Convert(obj, mc, nil)

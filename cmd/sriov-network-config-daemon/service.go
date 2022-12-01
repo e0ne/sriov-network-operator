@@ -4,15 +4,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+
 	"github.com/golang/glog"
+	"github.com/spf13/cobra"
+
 	sriovv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	plugin "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins/generic"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins/virtual"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/systemd"
-	"github.com/spf13/cobra"
-	"os"
-
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/version"
 )
@@ -22,12 +24,7 @@ var (
 		Use:   "service",
 		Short: "Starts SR-IOV service Config",
 		Long:  "",
-		Run:   runServiceCmd,
-	}
-
-	serviceOpts struct {
-		kubeconfig string
-		nodeName   string
+		RunE:  runServiceCmd,
 	}
 )
 
@@ -37,7 +34,7 @@ func init() {
 	serviceCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing.")
 }
 
-func runServiceCmd(cmd *cobra.Command, args []string) {
+func runServiceCmd(cmd *cobra.Command, args []string) error {
 	flag.Set("logtostderr", "true")
 	flag.Set("stderrthreshold", "INFO")
 	flag.Parse()
@@ -56,9 +53,9 @@ func runServiceCmd(cmd *cobra.Command, args []string) {
 		err = systemd.WriteSriovResult(sriovResult)
 		if err != nil {
 			glog.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
-			return
+			return fmt.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
 		}
-		return
+		return fmt.Errorf("sriov-config-service failed to read list of supported nic ids: %v", err)
 	}
 	sriovv1.InitNicIDMapFromList(supportedNicIds)
 
@@ -73,7 +70,7 @@ func runServiceCmd(cmd *cobra.Command, args []string) {
 			err = systemd.WriteSriovResult(sriovResult)
 			if err != nil {
 				glog.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
-				return
+				return fmt.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
 			}
 		}
 
@@ -101,35 +98,41 @@ func runServiceCmd(cmd *cobra.Command, args []string) {
 		// Bare metal support
 		ifaceStatuses, err = utils.DiscoverSriovDevices(nodeStateSpec.UnsupportedNics)
 		if err != nil {
-			glog.V(0).Infof("sriov-config-service failed %v", err)
-			return
+			glog.Errorf("sriov-config-service: failed to discover sriov devices on the host: %v", err)
+			return fmt.Errorf("sriov-config-service: failed to discover sriov devices on the host:  %v", err)
 		}
 
 		// Create the generic plugin
 		configPlugin, err = generic.NewGenericPlugin(true)
 		if err != nil {
-			glog.Errorf("sriov-config-service failed to create generic plugin %v", err)
-			return
+			glog.Errorf("sriov-config-service: failed to create generic plugin %v", err)
+			return fmt.Errorf("sriov-config-service failed to create generic plugin %v", err)
 		}
-
 	} else if nodeStateSpec.PlatformType == utils.VirtualOpenStack {
 		// Openstack support
 		metaData, networkData, err := utils.GetOpenstackData(false)
 		if err != nil {
-			glog.Errorf("RunOnce(): failed to read OpenStack data: %v", err)
-			return
+			glog.Errorf("sriov-config-service: failed to read OpenStack data: %v", err)
+			return fmt.Errorf("sriov-config-service failed to read OpenStack data: %v", err)
 		}
 
 		openStackDevicesInfo, err := utils.CreateOpenstackDevicesInfo(metaData, networkData)
 		if err != nil {
-			glog.Errorf("RunOnce(): failed to read OpenStack data: %v", err)
-			return
+			glog.Errorf("failed to read OpenStack data: %v", err)
+			return fmt.Errorf("sriov-config-service failed to read OpenStack data: %v", err)
 		}
 
 		ifaceStatuses, err = utils.DiscoverSriovDevicesVirtual(openStackDevicesInfo)
 		if err != nil {
-			glog.Errorf("RunOnce(): failed to read OpenStack data: %v", err)
-			return
+			glog.Errorf("sriov-config-service:failed to read OpenStack data: %v", err)
+			return fmt.Errorf("sriov-config-service: failed to read OpenStack data: %v", err)
+		}
+
+		// Create the virtual plugin
+		configPlugin, err = virtual.NewVirtualPlugin(true)
+		if err != nil {
+			glog.Errorf("sriov-config-service: failed to create virtual plugin %v", err)
+			return fmt.Errorf("sriov-config-service: failed to create virtual plugin %v", err)
 		}
 	}
 
@@ -140,8 +143,8 @@ func runServiceCmd(cmd *cobra.Command, args []string) {
 
 	_, _, err = configPlugin.OnNodeStateChange(nodeState)
 	if err != nil {
-		glog.Errorf("sriov-config-service failed to run OnNodeStateChange to update the generic plugin status %v", err)
-		return
+		glog.Errorf("sriov-config-service: failed to run OnNodeStateChange to update the generic plugin status %v", err)
+		return fmt.Errorf("sriov-config-service: failed to run OnNodeStateChange to update the generic plugin status %v", err)
 	}
 
 	sriovResult := &systemd.SriovResult{
@@ -159,8 +162,9 @@ func runServiceCmd(cmd *cobra.Command, args []string) {
 	err = systemd.WriteSriovResult(sriovResult)
 	if err != nil {
 		glog.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
-		return
+		return fmt.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
 	}
 
 	glog.V(0).Info("Shutting down sriov-config-service")
+	return nil
 }

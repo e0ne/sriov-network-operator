@@ -3,11 +3,12 @@ package systemd
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
-	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"os"
 	"strings"
+
+	"github.com/golang/glog"
+	"gopkg.in/yaml.v3"
 
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
@@ -21,8 +22,11 @@ const (
 
 	SriovHostSystemdConfigPath        = "/host" + SriovSystemdConfigPath
 	SriovHostSystemdResultPath        = "/host" + SriovSystemdResultPath
-	sriovHostSustemdSupportedNicPath  = "/host" + sriovSystemdSupportedNicPath
+	sriovHostSystemdSupportedNicPath  = "/host" + sriovSystemdSupportedNicPath
 	sriovHostSystemdServiceBinaryPath = "/host" + sriovSystemdServiceBinaryPath
+
+	SriovServicePath     = "/etc/systemd/system/sriov-config.service"
+	SriovHostServicePath = "/host" + SriovServicePath
 )
 
 type SriovConfig struct {
@@ -147,10 +151,10 @@ func WriteSriovResult(result *SriovResult) error {
 		return err
 	}
 
-	glog.V(2).Infof("WriteConfFile(): write '%s' to %s", string(out), SriovSystemdResultPath)
+	glog.V(2).Infof("WriteSriovResult(): write '%s' to %s", string(out), SriovSystemdResultPath)
 	err = ioutil.WriteFile(SriovSystemdResultPath, out, 0644)
 	if err != nil {
-		glog.Errorf("WriteConfFile(): failed to write sriov result file on path %s: %v", SriovSystemdResultPath, err)
+		glog.Errorf("WriteSriovResult(): failed to write sriov result file on path %s: %v", SriovSystemdResultPath, err)
 		return err
 	}
 
@@ -185,17 +189,17 @@ func ReadSriovResult() (*SriovResult, error) {
 }
 
 func WriteSriovSupportedNics() error {
-	_, err := os.Stat(sriovHostSustemdSupportedNicPath)
+	_, err := os.Stat(sriovHostSystemdSupportedNicPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			glog.V(2).Infof("WriteSriovSupportedNics(): file not existed, create it")
-			_, err = os.Create(sriovHostSustemdSupportedNicPath)
+			_, err = os.Create(sriovHostSystemdSupportedNicPath)
 			if err != nil {
-				glog.Errorf("WriteSriovSupportedNics(): failed to create sriov supporter nics ids file on path %s: %v", sriovHostSustemdSupportedNicPath, err)
+				glog.Errorf("WriteSriovSupportedNics(): failed to create sriov supporter nics ids file on path %s: %v", sriovHostSystemdSupportedNicPath, err)
 				return err
 			}
 		} else {
-			glog.Errorf("WriteSriovSupportedNics(): failed to check sriov supporter nics ids file on path %s: %v", sriovHostSustemdSupportedNicPath, err)
+			glog.Errorf("WriteSriovSupportedNics(): failed to check sriov supporter nics ids file on path %s: %v", sriovHostSystemdSupportedNicPath, err)
 			return err
 		}
 	}
@@ -205,9 +209,9 @@ func WriteSriovSupportedNics() error {
 		rawNicList = append(rawNicList, []byte(fmt.Sprintf("%s\n", line))...)
 	}
 
-	err = ioutil.WriteFile(sriovHostSustemdSupportedNicPath, rawNicList, 0644)
+	err = ioutil.WriteFile(sriovHostSystemdSupportedNicPath, rawNicList, 0644)
 	if err != nil {
-		glog.Errorf("WriteSriovSupportedNics(): failed to write sriov supporter nics ids file on path %s: %v", sriovHostSustemdSupportedNicPath, err)
+		glog.Errorf("WriteSriovSupportedNics(): failed to write sriov supporter nics ids file on path %s: %v", sriovHostSystemdSupportedNicPath, err)
 		return err
 	}
 
@@ -247,12 +251,17 @@ func CleanSriovFilesFromHost() error {
 		return err
 	}
 
-	err = os.Remove(sriovHostSustemdSupportedNicPath)
+	err = os.Remove(sriovHostSystemdSupportedNicPath)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 
 	err = os.Remove(sriovHostSystemdServiceBinaryPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	err = os.Remove(SriovHostServicePath)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}

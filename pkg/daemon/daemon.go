@@ -43,6 +43,7 @@ import (
 	sninformer "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/informers/externalversions"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	plugin "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/service"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/systemd"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 )
@@ -81,6 +82,8 @@ type Daemon struct {
 
 	enabledPlugins map[string]plugin.VendorPlugin
 
+	serviceManager service.ServiceManager
+
 	// channel used by callbacks to signal Run() of an error
 	exitCh chan<- error
 
@@ -109,7 +112,6 @@ type Daemon struct {
 }
 
 const (
-	rdmaScriptsPath     = "/bindata/scripts/enable-rdma.sh"
 	udevScriptsPath     = "/bindata/scripts/load-udev.sh"
 	annoKey             = "sriovnetwork.openshift.io/state"
 	annoIdle            = "Idle"
@@ -156,6 +158,7 @@ func New(
 		client:            client,
 		kubeClient:        kubeClient,
 		openshiftContext:  openshiftContext,
+		serviceManager:    service.NewServiceManager("/host"),
 		exitCh:            exitCh,
 		stopCh:            stopCh,
 		syncCh:            syncCh,
@@ -219,7 +222,8 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	} else {
 		glog.V(0).Infof("Run(): start daemon.")
 	}
-	if dn.useSystemdService == true {
+
+	if dn.useSystemdService {
 		glog.V(0).Info("Run(): daemon running in systemd mode")
 	}
 	// Only watch own SriovNetworkNodeState CR
@@ -478,24 +482,37 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	}
 
 	if dn.useSystemdService {
-		sriovResult, err = systemd.ReadSriovResult()
+		serviceExist, err := dn.serviceManager.IsServiceExist(systemd.SriovServicePath)
 		if err != nil {
-			glog.Errorf("nodeStateSyncHandler(): failed to load sriov result file from host: %v", err)
+			glog.Errorf("nodeStateSyncHandler(): failed to check if sriov-config service exist on host: %v", err)
 			return err
 		}
 
-		if dn.nodeState.GetGeneration() == latest {
-			if sriovResult.LastSyncError != "" || sriovResult.SyncStatus != syncStatusSucceeded {
-				glog.Infof("nodeStateSyncHandler(): sync failed systemd service error: %s", sriovResult.LastSyncError)
-				dn.nodeState = latestState.DeepCopy()
+		// if the service doesn't exist we should continue to let the k8s plugin to create the service files
+		// this is only for k8s base environments, for openshift the sriov-operator creates a machine config to will apply
+		// the system service and reboot the node the config-daemon doesn't need to do anything.
+		if !serviceExist {
+			sriovResult = &systemd.SriovResult{SyncStatus: syncStatusFailed, LastSyncError: "sriov-config systemd service doesn't exist on node"}
+		} else {
+			sriovResult, err = systemd.ReadSriovResult()
+			if err != nil {
+				glog.Errorf("nodeStateSyncHandler(): failed to load sriov result file from host: %v", err)
+				return err
+			}
 
-				// add the error but don't requeue
-				dn.refreshCh <- Message{
-					syncStatus:    syncStatusFailed,
-					lastSyncError: sriovResult.LastSyncError,
+			if dn.nodeState.GetGeneration() == latest {
+				if sriovResult.LastSyncError != "" || sriovResult.SyncStatus != syncStatusSucceeded {
+					glog.Infof("nodeStateSyncHandler(): sync failed systemd service error: %s", sriovResult.LastSyncError)
+					dn.nodeState = latestState.DeepCopy()
+
+					// add the error but don't requeue
+					dn.refreshCh <- Message{
+						syncStatus:    syncStatusFailed,
+						lastSyncError: sriovResult.LastSyncError,
+					}
+					<-dn.syncCh
+					return nil
 				}
-				<-dn.syncCh
-				return nil
 			}
 		}
 	}
@@ -507,7 +524,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 
 	// load plugins if it has not loaded
 	if len(dn.enabledPlugins) == 0 {
-		dn.enabledPlugins, err = enablePlugins(dn.platform, latestState)
+		dn.enabledPlugins, err = enablePlugins(dn.platform, dn.useSystemdService, latestState)
 		if err != nil {
 			glog.Errorf("nodeStateSyncHandler(): failed to enable vendor plugins error: %v", err)
 			return err

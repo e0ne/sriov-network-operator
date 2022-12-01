@@ -1,12 +1,12 @@
 package virtual
 
 import (
-	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	"reflect"
 
 	"github.com/golang/glog"
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	constants "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/consts"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	plugin "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 )
