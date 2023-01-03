@@ -41,7 +41,7 @@ spec:
         - name: sriov-cni
           image: {{.SRIOVCNIImage}}
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - cp /usr/bin/sriov /host/opt/cni/bin/
           securityContext:
@@ -56,7 +56,7 @@ spec:
         - name: sriov-infiniband-cni
           image: {{.SRIOVInfiniBandCNIImage}}
           command:
-            - /bin/bash
+            - /bin/sh
             - -c
             - cp /usr/bin/ib-sriov /host/opt/cni/bin/
           securityContext:
@@ -74,7 +74,7 @@ spec:
           command:
             - /bin/bash
             - -c
-            - mkdir -p /host/var/lib/sriov/ && cp /usr/bin/sriov-network-config-daemon /host/var/lib/sriov/sriov-network-config-daemon && chcon -t bin_t /host/var/lib/sriov/sriov-network-config-daemon #Allow systemd to run the file
+            - mkdir -p /host/var/lib/sriov/ && cp /usr/bin/sriov-network-config-daemon /host/var/lib/sriov/sriov-network-config-daemon && chcon -t bin_t /host/var/lib/sriov/sriov-network-config-daemon | true #Allow systemd to run the file
           securityContext:
             privileged: true
           resources:

@@ -138,13 +138,25 @@ func runServiceCmd(cmd *cobra.Command, args []string) {
 		Status: sriovv1.SriovNetworkNodeStateStatus{Interfaces: ifaceStatuses},
 	}
 
+	// Set "In Progress" state by to indicate work is started
+	sriovResult := &systemd.SriovResult{
+		SyncStatus:    "In Progress",
+		LastSyncError: "",
+	}
+
+	err = systemd.WriteSriovResult(sriovResult)
+	if err != nil {
+		glog.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
+		return
+	}
+
 	_, _, err = configPlugin.OnNodeStateChange(nodeState)
 	if err != nil {
 		glog.Errorf("sriov-config-service failed to run OnNodeStateChange to update the generic plugin status %v", err)
 		return
 	}
 
-	sriovResult := &systemd.SriovResult{
+	sriovResult = &systemd.SriovResult{
 		SyncStatus:    "Succeeded",
 		LastSyncError: "",
 	}

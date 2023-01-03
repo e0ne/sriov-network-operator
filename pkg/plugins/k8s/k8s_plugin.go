@@ -93,6 +93,8 @@ const (
 	switchdevRenamingUdevScript       = switchdevManifestPath + "files/switchdev-vf-link-name.sh.yaml"
 
 	chroot = "/host"
+
+	SriovUnitFile = sriovUnits + "sriov-config-service.yaml"
 )
 
 // Initialize our plugin and set up initial values

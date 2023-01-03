@@ -43,6 +43,8 @@ import (
 	sninformer "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/informers/externalversions"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/host"
 	plugin "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins"
+	k8s "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/plugins/k8s"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/service"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/systemd"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 )
@@ -221,6 +223,37 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 	}
 	if dn.useSystemdService == true {
 		glog.V(0).Info("Run(): daemon running in systemd mode")
+		sriovResult := &systemd.SriovResult{
+			SyncStatus:    "In Progress",
+			LastSyncError: "",
+		}
+
+		err := systemd.WriteSriovHostResult(sriovResult)
+		if err != nil {
+			glog.Errorf("sriov-config-service failed to write sriov result file with content %v error: %v", *sriovResult, err)
+			return err
+		}
+		srv, err := service.ReadServiceInjectionManifestFile(k8s.SriovUnitFile)
+		if err != nil {
+			glog.Errorf("Run(): failed to read service manifest: %v", err)
+		}
+
+		glog.V(0).Infof("Service Path: %v", srv.Path)
+		glog.V(0).Infof("Service Name: %v", srv.Name)
+		glog.V(0).Infof("Service Content: %v", srv.Content)
+		err = ioutil.WriteFile(path.Join("/host", srv.Path),
+			[]byte(srv.Content), 0755)
+		if err != nil {
+			glog.Errorf("Run(): failed to create service: %v", err)
+			return err
+		}
+
+		sm := service.NewServiceManager("/host")
+		err = sm.EnableService(srv)
+		if err != nil {
+			glog.Errorf("Run(): failed to enable service: %v", err)
+			return err
+		}
 	}
 	// Only watch own SriovNetworkNodeState CR
 	defer utilruntime.HandleCrash()
@@ -478,6 +511,12 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	}
 
 	if dn.useSystemdService {
+		// Ensure config file is created
+		_, err := systemd.WriteConfFile(latestState, false, utils.Baremetal)
+		if err != nil {
+			glog.Errorf("nodeStateSyncHandler(): failed to write configuration file for systemd mode: %v", err)
+			return err
+		}
 		sriovResult, err = systemd.ReadSriovResult()
 		if err != nil {
 			glog.Errorf("nodeStateSyncHandler(): failed to load sriov result file from host: %v", err)

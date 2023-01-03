@@ -1,18 +1,20 @@
-contents: |
-  [Unit]
-  Description=Configures SRIOV NIC
-  # Removal of this file signals firstboot completion
-  ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
-  # This service is used to confirur SR-IOV VFs on NICs
-  # Before kubelet.service (no effect on systems without kubernetes)
-  Before=NetworkManager.service
-  
-  [Service]
-  Type=oneshot
-  ExecStart=/var/lib/sriov/sriov-network-config-daemon service -v {{ .LogLevel }}
-  StandardOutput=journal+console
-  
-  [Install]
-  WantedBy=multi-user.target
-enabled: true
 name: sriov-config-service.service
+dropins:
+  - name: 10-switchdev.conf
+    contents: |
+      [Unit]
+      Description=Configures SRIOV NIC
+      # Removal of this file signals firstboot completion
+      ConditionPathExists=!/etc/ignition-machine-config-encapsulated.json
+      # This service is used to confirur SR-IOV VFs on NICs
+      # Before kubelet.service (no effect on systems without kubernetes)
+      Before=NetworkManager.service
+      
+      [Service]
+      Type=oneshot
+      ExecStart=/var/lib/sriov/sriov-network-config-daemon service -v 2
+      StandardOutput=journal+console
+      
+      [Install]
+      WantedBy=multi-user.target
+enabled: true

@@ -126,17 +126,24 @@ func WriteConfFile(newState *sriovnetworkv1.SriovNetworkNodeState, unsupportedNi
 }
 
 func WriteSriovResult(result *SriovResult) error {
-	_, err := os.Stat(SriovSystemdResultPath)
+	return writeSriovResult(result, SriovSystemdResultPath)
+}
+
+func WriteSriovHostResult(result *SriovResult) error {
+	return writeSriovResult(result, SriovHostSystemdResultPath)
+}
+func writeSriovResult(result *SriovResult, path string) error {
+	_, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			glog.V(2).Infof("WriteSriovResult(): file not existed, create it")
-			_, err = os.Create(SriovSystemdResultPath)
+			_, err = os.Create(path)
 			if err != nil {
-				glog.Errorf("WriteSriovResult(): failed to create sriov result file on path %s: %v", SriovSystemdResultPath, err)
+				glog.Errorf("WriteSriovResult(): failed to create sriov result file on path %s: %v", path, err)
 				return err
 			}
 		} else {
-			glog.Errorf("WriteSriovResult(): failed to check sriov result file on path %s: %v", SriovSystemdResultPath, err)
+			glog.Errorf("WriteSriovResult(): failed to check sriov result file on path %s: %v", path, err)
 			return err
 		}
 	}
@@ -147,10 +154,10 @@ func WriteSriovResult(result *SriovResult) error {
 		return err
 	}
 
-	glog.V(2).Infof("WriteConfFile(): write '%s' to %s", string(out), SriovSystemdResultPath)
-	err = ioutil.WriteFile(SriovSystemdResultPath, out, 0644)
+	glog.V(2).Infof("WriteConfFile(): write '%s' to %s", string(out), path)
+	err = ioutil.WriteFile(path, out, 0644)
 	if err != nil {
-		glog.Errorf("WriteConfFile(): failed to write sriov result file on path %s: %v", SriovSystemdResultPath, err)
+		glog.Errorf("WriteConfFile(): failed to write sriov result file on path %s: %v", path, err)
 		return err
 	}
 
