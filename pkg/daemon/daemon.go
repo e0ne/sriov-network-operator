@@ -484,8 +484,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	if dn.useSystemdService {
 		serviceExist, err := dn.serviceManager.IsServiceExist(systemd.SriovServicePath)
 		if err != nil {
-			glog.Errorf("nodeStateSyncHandler(): failed to check if sriov-config service exist on host: %v", err)
-			return err
+			glog.Warningf("nodeStateSyncHandler(): sriov-config service doesn't exist on host yet: %v", err)
 		}
 
 		// if the service doesn't exist we should continue to let the k8s plugin to create the service files
