@@ -25,6 +25,7 @@ import (
 	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	openshiftconfigv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
+	mcclientset "github.com/openshift/machine-config-operator/pkg/generated/clientset/versioned"
 	"k8s.io/apimachinery/pkg/api/errors"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -69,6 +70,7 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -82,6 +84,28 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	restConfig := ctrl.GetConfigOrDie()
+
+	var openshiftContext *utils.OpenshiftContext
+	if utils.ClusterType == utils.ClusterTypeOpenshift {
+		mcclient := mcclientset.NewForConfigOrDie(restConfig)
+		openshiftFlavor := utils.OpenshiftFlavorDefault
+		infraClient, err := client.New(restConfig, client.Options{
+			Scheme: scheme,
+		})
+		if err != nil {
+			panic(err)
+		}
+		isHypershift, err := utils.IsExternalControlPlaneCluster(infraClient)
+		if err != nil {
+			panic(err)
+		}
+		if isHypershift {
+			openshiftFlavor = utils.OpenshiftFlavorHypershift
+		}
+
+		openshiftContext = &utils.OpenshiftContext{McClient: mcclient, OpenshiftFlavor: openshiftFlavor}
+	}
+
 	kubeClient, err := client.New(restConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		setupLog.Error(err, "couldn't create client")
