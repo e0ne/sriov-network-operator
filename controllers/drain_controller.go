@@ -82,7 +82,7 @@ func (dr *DrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	drainingNodes := 0
 	for _, node := range nodeList.Items {
-		if utils.NodeHasAnnotation(node, constants.NodeDrainAnnotation, "Draining") || utils.NodeHasAnnotation(node, constants.NodeDrainAnnotation, "Draining_MCP_Paused") {
+		if utils.NodeHasAnnotation(node, constants.NodeDrainAnnotation, constants.Draining) || utils.NodeHasAnnotation(node, constants.NodeDrainAnnotation, constants.DrainMcpPaused) {
 			dr.drainNode(&node)
 			drainingNodes++
 		}
