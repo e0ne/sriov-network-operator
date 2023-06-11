@@ -26,8 +26,8 @@ type GenericPlugin struct {
 	LastState            *sriovnetworkv1.SriovNetworkNodeState
 	LoadVfioDriver       uint
 	LoadVirtioVdpaDriver uint
-	RunningOnHost  bool
-	HostManager    host.HostManagerInterface
+	RunningOnHost        bool
+	HostManager          host.HostManagerInterface
 }
 
 const scriptsPath = "bindata/scripts/enable-kargs.sh"
@@ -41,12 +41,12 @@ const (
 // Initialize our plugin and set up initial values
 func NewGenericPlugin(runningOnHost bool) (plugin.VendorPlugin, error) {
 	return &GenericPlugin{
-		PluginName:     PluginName,
-		SpecVersion:    "1.0",
-		LoadVfioDriver: unloaded,
+		PluginName:           PluginName,
+		SpecVersion:          "1.0",
+		LoadVfioDriver:       unloaded,
 		LoadVirtioVdpaDriver: unloaded,
-		RunningOnHost:  runningOnHost,
-		HostManager:    host.NewHostManager(runningOnHost),
+		RunningOnHost:        runningOnHost,
+		HostManager:          host.NewHostManager(runningOnHost),
 	}, nil
 }
 
@@ -89,7 +89,7 @@ func (p *GenericPlugin) Apply() error {
 	}
 
 	if p.LoadVirtioVdpaDriver == loading {
-		if err := utils.LoadKernelModule("virtio_vdpa"); err != nil {
+		if err := p.HostManager.LoadKernelModule("virtio_vdpa"); err != nil {
 			glog.Errorf("generic-plugin Apply(): fail to load virtio_vdpa kmod: %v", err)
 			return err
 		}

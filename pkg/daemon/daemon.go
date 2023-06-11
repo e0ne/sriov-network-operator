@@ -112,13 +112,14 @@ type Daemon struct {
 }
 
 const (
-	udevScriptsPath     = "/bindata/scripts/load-udev.sh"
-	annoKey             = "sriovnetwork.openshift.io/state"
-	annoIdle            = "Idle"
-	annoDraining        = "Draining"
-	annoMcpPaused       = "Draining_MCP_Paused"
-	syncStatusSucceeded = "Succeeded"
-	syncStatusFailed    = "Failed"syncStatusInProgress = "InProgress"
+	udevScriptsPath      = "/bindata/scripts/load-udev.sh"
+	annoKey              = "sriovnetwork.openshift.io/state"
+	annoIdle             = "Idle"
+	annoDraining         = "Draining"
+	annoMcpPaused        = "Draining_MCP_Paused"
+	syncStatusSucceeded  = "Succeeded"
+	syncStatusFailed     = "Failed"
+	syncStatusInProgress = "InProgress"
 )
 
 var namespace = os.Getenv("NAMESPACE")
