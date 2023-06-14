@@ -436,7 +436,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	var err error
 	// Get the latest NodeState
 	var latestState *sriovnetworkv1.SriovNetworkNodeState
-	var sriovResult *systemd.SriovResult
+	var sriovResult = &systemd.SriovResult{SyncStatus: syncStatusSucceeded, LastSyncError: ""}
 	latestState, err = dn.client.SriovnetworkV1().SriovNetworkNodeStates(namespace).Get(context.Background(), dn.name, metav1.GetOptions{})
 	if err != nil {
 		glog.Warningf("nodeStateSyncHandler(): Failed to fetch node state %s: %v", dn.name, err)
@@ -452,6 +452,38 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	}
 
 	if dn.nodeState.GetGeneration() == latest {
+		if dn.useSystemdService {
+			serviceExist, err := dn.serviceManager.IsServiceExist(systemd.SriovServicePath)
+			if err != nil {
+				glog.Errorf("nodeStateSyncHandler(): failed to check if sriov-config service exist on host: %v", err)
+				return err
+			}
+
+			// if the service doesn't exist we should continue to let the k8s plugin to create the service files
+			// this is only for k8s base environments, for openshift the sriov-operator creates a machine config to will apply
+			// the system service and reboot the node the config-daemon doesn't need to do anything.
+			if !serviceExist {
+				sriovResult = &systemd.SriovResult{SyncStatus: syncStatusFailed, LastSyncError: "sriov-config systemd service doesn't exist on node"}
+			} else {
+				sriovResult, err = systemd.ReadSriovResult()
+				if err != nil {
+					glog.Errorf("nodeStateSyncHandler(): failed to load sriov result file from host: %v", err)
+					return err
+				}
+			}
+			if sriovResult.LastSyncError != "" || sriovResult.SyncStatus == syncStatusFailed {
+				glog.Infof("nodeStateSyncHandler(): sync failed systemd service error: %s", sriovResult.LastSyncError)
+
+				// add the error but don't requeue
+				dn.refreshCh <- Message{
+					syncStatus:    syncStatusFailed,
+					lastSyncError: sriovResult.LastSyncError,
+				}
+				<-dn.syncCh
+				return nil
+			}
+			return nil
+		}
 		glog.V(0).Infof("nodeStateSyncHandler(): Interface not changed")
 		if latestState.Status.LastSyncError != "" ||
 			latestState.Status.SyncStatus != syncStatusSucceeded {
@@ -477,42 +509,6 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 			<-dn.syncCh
 		}
 		return nil
-	}
-
-	if dn.useSystemdService {
-		serviceExist, err := dn.serviceManager.IsServiceExist(systemd.SriovServicePath)
-		if err != nil {
-			glog.Errorf("nodeStateSyncHandler(): failed to check if sriov-config service exist on host: %v", err)
-			return err
-		}
-
-		// if the service doesn't exist we should continue to let the k8s plugin to create the service files
-		// this is only for k8s base environments, for openshift the sriov-operator creates a machine config to will apply
-		// the system service and reboot the node the config-daemon doesn't need to do anything.
-		if !serviceExist {
-			sriovResult = &systemd.SriovResult{SyncStatus: syncStatusFailed, LastSyncError: "sriov-config systemd service doesn't exist on node"}
-		} else {
-			sriovResult, err = systemd.ReadSriovResult()
-			if err != nil {
-				glog.Errorf("nodeStateSyncHandler(): failed to load sriov result file from host: %v", err)
-				return err
-			}
-
-			if dn.nodeState.GetGeneration() == latest {
-				if sriovResult.LastSyncError != "" || sriovResult.SyncStatus == syncStatusFailed {
-					glog.Infof("nodeStateSyncHandler(): sync failed systemd service error: %s", sriovResult.LastSyncError)
-					dn.nodeState = latestState.DeepCopy()
-
-					// add the error but don't requeue
-					dn.refreshCh <- Message{
-						syncStatus:    syncStatusFailed,
-						lastSyncError: sriovResult.LastSyncError,
-					}
-					<-dn.syncCh
-					return nil
-				}
-			}
-		}
 	}
 
 	dn.refreshCh <- Message{
