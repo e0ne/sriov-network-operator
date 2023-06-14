@@ -6,7 +6,7 @@ contents: |
   
   [Service]
   Type=oneshot
-  ExecStart=/var/lib/sriov/sriov-network-config-daemon service -v {{ .LogLevel }}
+  ExecStart=/var/lib/sriov/sriov-network-config-daemon service
   StandardOutput=journal+console
   
   [Install]
