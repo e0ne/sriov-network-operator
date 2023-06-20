@@ -60,8 +60,8 @@ const (
 type ConfigurationModeType string
 
 const (
-	DaemonConfigurationMode  = "daemon"
-	SystemdConfigurationMode = "systemd"
+	DaemonConfigurationMode  ConfigurationModeType = "daemon"
+	SystemdConfigurationMode ConfigurationModeType = "systemd"
 )
 
 func (e NetFilterType) String() string {

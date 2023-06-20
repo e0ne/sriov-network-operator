@@ -31,7 +31,11 @@ var webhooks = map[string](string){
 }
 
 const (
-	machineConfigCRDName = "MachineConfig"
+	clusterRoleResourceName               = "ClusterRole"
+	clusterRoleBindingResourceName        = "ClusterRoleBinding"
+	mutatingWebhookConfigurationCRDName   = "MutatingWebhookConfiguration"
+	validatingWebhookConfigurationCRDName = "ValidatingWebhookConfiguration"
+	machineConfigCRDName                  = "MachineConfig"
 )
 
 var namespace = os.Getenv("NAMESPACE")
