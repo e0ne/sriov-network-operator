@@ -32,7 +32,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sort"
 	"strings"
@@ -108,7 +107,7 @@ func (dr *DrainReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 			drainingNodes++
 		} else {
-			reqLogger.Info("Too many nodes to be draining at the moment. Skipping node %s", node.Name)
+			reqLogger.Info("Too many nodes to be draining at the moment. Skipping node %s", "node", node.Name)
 			return reconcile.Result{}, nil
 		}
 	}
@@ -137,7 +136,7 @@ func (dr *DrainReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	// Watch for spec and annotation changes
-	nodePredicates := builder.WithPredicates(predicate.AnnotationChangedPredicate{})
+	nodePredicates := builder.WithPredicates(DrainAnnotationPredicate{})
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&sriovnetworkv1.SriovOperatorConfig{}).
