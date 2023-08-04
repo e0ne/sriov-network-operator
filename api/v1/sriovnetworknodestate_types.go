@@ -85,6 +85,7 @@ type VirtualFunction struct {
 // SriovNetworkNodeStateStatus defines the observed state of SriovNetworkNodeState
 type SriovNetworkNodeStateStatus struct {
 	Interfaces    InterfaceExts `json:"interfaces,omitempty"`
+	DrainStatus   string        `json:"drainStatus,omitempty"`
 	SyncStatus    string        `json:"syncStatus,omitempty"`
 	LastSyncError string        `json:"lastSyncError,omitempty"`
 }

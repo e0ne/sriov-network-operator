@@ -118,7 +118,7 @@ func openshiftControlPlaneTopologyStatus(c client.Client) (configv1.TopologyMode
 }
 
 func NodeHasAnnotation(node corev1.Node, annoKey string, value string) bool {
-	// Check if node already contains annotation
+	// Check if node already contains annotation with specified value
 	if anno, ok := node.Annotations[annoKey]; ok && (anno == value) {
 		return true
 	}

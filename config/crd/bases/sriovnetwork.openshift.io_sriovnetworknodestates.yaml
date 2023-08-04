@@ -88,6 +88,8 @@ spec:
             description: SriovNetworkNodeStateStatus defines the observed state of
               SriovNetworkNodeState
             properties:
+              drainStatus:
+                type: string
               interfaces:
                 items:
                   properties:
