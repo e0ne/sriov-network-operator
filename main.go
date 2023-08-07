@@ -20,12 +20,15 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/golang/glog"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/drain"
 	"os"
 	"time"
 
+	"github.com/golang/glog"
 	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	openshiftconfigv1 "github.com/openshift/api/config/v1"
 	mcfgv1 "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -49,6 +52,7 @@ import (
 
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/controllers"
+	snclientset "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/clientset/versioned"
 	constants "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/consts"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/leaderelection"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
@@ -135,6 +139,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	var config *rest.Config
+	kubeconfig := os.Getenv("KUBECONFIG")
+	if kubeconfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	} else {
+		// creates the in-cluster config
+		config, err = rest.InClusterConfig()
+	}
+	snclient := snclientset.NewForConfigOrDie(config)
 	kubeclient := kubernetes.NewForConfigOrDie(ctrl.GetConfigOrDie())
 
 	if err = (&controllers.SriovNetworkReconciler{
@@ -200,8 +213,9 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controllers.MigrationReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		ClientSet: snclient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "MigrationReconciler")
 		os.Exit(1)

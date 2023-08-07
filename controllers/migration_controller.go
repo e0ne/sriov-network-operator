@@ -2,10 +2,10 @@ package controllers
 
 import (
 	"context"
-	"fmt"
-	v1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
-	constants "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/consts"
+
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -13,14 +13,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	v1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
+	snclientset "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/client/clientset/versioned"
+	constants "github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/consts"
 )
 
 type MigrationReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	ClientSet snclientset.Interface
 }
 
-//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;create;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -35,6 +40,9 @@ func (mr *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	err := mr.Get(ctx, types.NamespacedName{
 		Name: req.Name}, node)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return reconcile.Result{}, nil
+		}
 		reqLogger.Error(err, "Error occurred on GET SriovOperatorConfig request from API server.")
 		return reconcile.Result{}, err
 	}
@@ -47,15 +55,19 @@ func (mr *MigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			reqLogger.Error(err, "Error occurred on GET SriovNetworkNodeState request from API server.")
 			return reconcile.Result{}, err
 		}
-		patch := []byte(fmt.Sprintf(`{"status":{"drainStatus":"%s"}}`, anno))
-		err = mr.Client.Patch(context.TODO(), nodeState, client.RawPatch(types.StrategicMergePatchType, patch))
-		if err != nil {
-			reqLogger.Error(err, "Error occurred on SriovNetworkNodeState update.")
-			return reconcile.Result{}, err
-		}
+		nodeState.Status.DrainStatus = anno
+		mr.ClientSet.SriovnetworkV1().SriovNetworkNodeStates(namespace).UpdateStatus(context.TODO(), nodeState, metav1.UpdateOptions{})
+		delete(node.Annotations, constants.NodeDrainAnnotation)
+		mr.Update(ctx, node)
+		//patch := []byte(fmt.Sprintf(`{"status":{"drainStatus":"%s"}}`, anno))
+		//err = mr.Client.Patch(context.TODO(), nodeState, client.RawPatch(types.StrategicMergePatchType, patch))
+		//if err != nil {
+		//	reqLogger.Error(err, "Error occurred on SriovNetworkNodeState update.")
+		//	return reconcile.Result{}, err
+		//}
 
 	}
-	
+
 	return reconcile.Result{}, nil
 }
 

@@ -53,6 +53,7 @@ const (
 )
 
 type Message struct {
+	drainStatus   string
 	syncStatus    string
 	lastSyncError string
 }
@@ -300,6 +301,7 @@ func (dn *Daemon) Run(stopCh <-chan struct{}, exitCh <-chan error) error {
 			glog.Warningf("Got an error: %v", err)
 			if more {
 				dn.refreshCh <- Message{
+					drainStatus:   dn.nodeState.Status.DrainStatus,
 					syncStatus:    syncStatusFailed,
 					lastSyncError: err.Error(),
 				}
@@ -356,8 +358,9 @@ func (dn *Daemon) processNextWorkItem() bool {
 
 		err := dn.nodeStateSyncHandler()
 		if err != nil {
-			// Ereport error message, and put the item back to work queue for retry.
+			// Report error message, and put the item back to work queue for retry.
 			dn.refreshCh <- Message{
+				drainStatus:   dn.nodeState.Status.DrainStatus,
 				syncStatus:    syncStatusFailed,
 				lastSyncError: err.Error(),
 			}
@@ -454,6 +457,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 
 				// add the error but don't requeue
 				dn.refreshCh <- Message{
+					drainStatus:   dn.nodeState.Status.DrainStatus,
 					syncStatus:    syncStatusFailed,
 					lastSyncError: sriovResult.LastSyncError,
 				}
@@ -466,6 +470,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		if latestState.Status.LastSyncError != "" ||
 			latestState.Status.SyncStatus != syncStatusSucceeded {
 			dn.refreshCh <- Message{
+				drainStatus:   dn.nodeState.Status.DrainStatus,
 				syncStatus:    syncStatusSucceeded,
 				lastSyncError: "",
 			}
@@ -480,6 +485,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		glog.V(0).Infof("nodeStateSyncHandler(): Name: %s, Interface policy spec not yet set by controller", latestState.Name)
 		if latestState.Status.SyncStatus != "Succeeded" {
 			dn.refreshCh <- Message{
+				drainStatus:   latestState.Status.DrainStatus,
 				syncStatus:    "Succeeded",
 				lastSyncError: "",
 			}
@@ -490,6 +496,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	}
 
 	dn.refreshCh <- Message{
+		drainStatus:   latestState.Status.DrainStatus,
 		syncStatus:    syncStatusInProgress,
 		lastSyncError: "",
 	}
@@ -647,11 +654,13 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	dn.nodeState = latestState.DeepCopy()
 	if dn.useSystemdService {
 		dn.refreshCh <- Message{
+			drainStatus:   dn.nodeState.Status.DrainStatus,
 			syncStatus:    sriovResult.SyncStatus,
 			lastSyncError: sriovResult.LastSyncError,
 		}
 	} else {
 		dn.refreshCh <- Message{
+			drainStatus:   dn.nodeState.Status.DrainStatus,
 			syncStatus:    syncStatusSucceeded,
 			lastSyncError: "",
 		}

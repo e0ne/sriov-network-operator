@@ -161,13 +161,14 @@ func (w *NodeStateStatusWriter) updateNodeStateStatusRetry(f func(*sriovnetworkv
 func (w *NodeStateStatusWriter) setNodeStateStatus(msg Message) (*sriovnetworkv1.SriovNetworkNodeState, error) {
 	nodeState, err := w.updateNodeStateStatusRetry(func(nodeState *sriovnetworkv1.SriovNetworkNodeState) {
 		nodeState.Status.Interfaces = w.status.Interfaces
+		nodeState.Status.DrainStatus = msg.drainStatus
 		if msg.lastSyncError != "" || msg.syncStatus == syncStatusSucceeded {
 			// clear lastSyncError when sync Succeeded
 			nodeState.Status.LastSyncError = msg.lastSyncError
 		}
 		nodeState.Status.SyncStatus = msg.syncStatus
 
-		glog.V(0).Infof("setNodeStateStatus(): syncStatus: %s, lastSyncError: %s", nodeState.Status.SyncStatus, nodeState.Status.LastSyncError)
+		glog.V(0).Infof("setNodeStateStatus(): drainStatus: %s, syncStatus: %s, lastSyncError: %s", nodeState.Status.DrainStatus, nodeState.Status.SyncStatus, nodeState.Status.LastSyncError)
 	})
 	if err != nil {
 		return nil, err
