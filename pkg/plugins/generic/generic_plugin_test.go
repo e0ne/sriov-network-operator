@@ -33,7 +33,7 @@ var _ = Describe("Generic plugin", func() {
 		ctrl = gomock.NewController(t)
 		mockHost = mock_host.NewMockHostManagerInterface(ctrl)
 		mockStore = mock_utils.NewMockStoreManagerInterface(ctrl)
-		genericPlugin, err = NewGenericPlugin(false, mockHost, mockStore)
+		genericPlugin, err = NewGenericPlugin(false, mockHost, mockStore, false)
 		Expect(err).ToNot(HaveOccurred())
 	})
 

@@ -69,6 +69,8 @@ type Daemon struct {
 
 	useSystemdService bool
 
+	parallelNicConfig bool
+
 	devMode bool
 
 	client snclientset.Interface
@@ -153,11 +155,13 @@ func New(
 	useSystemdService bool,
 	er *EventRecorder,
 	devMode bool,
+	parallelNicConfig bool,
 ) *Daemon {
 	return &Daemon{
 		name:              nodeName,
 		platform:          platformType,
 		useSystemdService: useSystemdService,
+		parallelNicConfig: parallelNicConfig,
 		devMode:           devMode,
 		client:            client,
 		kubeClient:        kubeClient,
@@ -540,7 +544,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 
 	// load plugins if it has not loaded
 	if len(dn.enabledPlugins) == 0 {
-		dn.enabledPlugins, err = enablePlugins(dn.platform, dn.useSystemdService, latestState, dn.hostManager, dn.storeManager)
+		dn.enabledPlugins, err = enablePlugins(dn.platform, dn.useSystemdService, latestState, dn.hostManager, dn.storeManager, dn.parallelNicConfig)
 		if err != nil {
 			log.Log.Error(err, "nodeStateSyncHandler(): failed to enable vendor plugins")
 			return err

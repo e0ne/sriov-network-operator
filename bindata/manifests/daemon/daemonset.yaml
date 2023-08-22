@@ -96,8 +96,11 @@ spec:
           privileged: true
         args:
           - "start"
-        {{- if .UsedSystemdMode}}
+        {{- if .UsedSystemdMode }}
           - --use-systemd-service
+        {{- end }}
+        {{- if .ParallelNicConfig }}
+          - --parallel-nic-config
         {{- end }}
         env:
           - name: NODE_NAME

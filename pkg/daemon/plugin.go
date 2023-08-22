@@ -29,7 +29,7 @@ var (
 	K8sPlugin         = k8splugin.NewK8sPlugin
 )
 
-func enablePlugins(platform utils.PlatformType, useSystemdService bool, ns *sriovnetworkv1.SriovNetworkNodeState, hostManager host.HostManagerInterface, storeManager utils.StoreManagerInterface) (map[string]plugin.VendorPlugin, error) {
+func enablePlugins(platform utils.PlatformType, useSystemdService bool, ns *sriovnetworkv1.SriovNetworkNodeState, hostManager host.HostManagerInterface, storeManager utils.StoreManagerInterface, parallelNicConfig bool) (map[string]plugin.VendorPlugin, error) {
 	log.Log.Info("enableVendorPlugins(): enabling plugins")
 	enabledPlugins := map[string]plugin.VendorPlugin{}
 
@@ -55,7 +55,7 @@ func enablePlugins(platform utils.PlatformType, useSystemdService bool, ns *srio
 			}
 			enabledPlugins[k8sPlugin.Name()] = k8sPlugin
 		}
-		genericPlugin, err := GenericPlugin(false, hostManager, storeManager)
+		genericPlugin, err := GenericPlugin(false, hostManager, storeManager, parallelNicConfig)
 		if err != nil {
 			log.Log.Error(err, "enableVendorPlugins(): failed to load the generic plugin")
 			return nil, err

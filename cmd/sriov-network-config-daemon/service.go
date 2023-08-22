@@ -120,9 +120,9 @@ func runServiceCmd(cmd *cobra.Command, args []string) error {
 			setupLog.Error(err, "failed to discover sriov devices on the host")
 			return fmt.Errorf("sriov-config-service: failed to discover sriov devices on the host:  %v", err)
 		}
-
+		// TODO(e0ne): read ParallelNicConfig from SriovOperatorConfig CR
 		// Create the generic plugin
-		configPlugin, err = generic.NewGenericPlugin(true, hostManager, storeManager)
+		configPlugin, err = generic.NewGenericPlugin(true, hostManager, storeManager, false)
 		if err != nil {
 			setupLog.Error(err, "failed to create generic plugin")
 			return fmt.Errorf("sriov-config-service failed to create generic plugin %v", err)

@@ -52,9 +52,10 @@ var (
 	}
 
 	startOpts struct {
-		kubeconfig string
-		nodeName   string
-		systemd    bool
+		kubeconfig        string
+		nodeName          string
+		systemd           bool
+		parallelNicConfig bool
 	}
 )
 
@@ -63,6 +64,7 @@ func init() {
 	startCmd.PersistentFlags().StringVar(&startOpts.kubeconfig, "kubeconfig", "", "Kubeconfig file to access a remote cluster (testing only)")
 	startCmd.PersistentFlags().StringVar(&startOpts.nodeName, "node-name", "", "kubernetes node name daemon is managing")
 	startCmd.PersistentFlags().BoolVar(&startOpts.systemd, "use-systemd-service", false, "use config daemon in systemd mode")
+	startCmd.PersistentFlags().BoolVar(&startOpts.parallelNicConfig, "parallel-nic-config", false, "NICs configuration in a parallel on the same node")
 }
 
 func runStartCmd(cmd *cobra.Command, args []string) error {
@@ -216,6 +218,7 @@ func runStartCmd(cmd *cobra.Command, args []string) error {
 		startOpts.systemd,
 		eventRecorder,
 		devMode,
+		startOpts.parallelNicConfig,
 	).Run(stopCh, exitCh)
 	if err != nil {
 		setupLog.Error(err, "failed to run daemon")

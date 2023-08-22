@@ -57,12 +57,13 @@ type GenericPlugin struct {
 	RunningOnHost     bool
 	HostManager       host.HostManagerInterface
 	StoreManager      utils.StoreManagerInterface
+	ParallelNicConfig bool
 }
 
 const scriptsPath = "bindata/scripts/enable-kargs.sh"
 
 // Initialize our plugin and set up initial values
-func NewGenericPlugin(runningOnHost bool, hostManager host.HostManagerInterface, storeManager utils.StoreManagerInterface) (plugin.VendorPlugin, error) {
+func NewGenericPlugin(runningOnHost bool, hostManager host.HostManagerInterface, storeManager utils.StoreManagerInterface, parallelNicConfig bool) (plugin.VendorPlugin, error) {
 	driverStateMap := make(map[uint]*DriverState)
 	driverStateMap[Vfio] = &DriverState{
 		DriverName:     vfioPciDriver,
@@ -93,6 +94,7 @@ func NewGenericPlugin(runningOnHost bool, hostManager host.HostManagerInterface,
 		RunningOnHost:     runningOnHost,
 		HostManager:       hostManager,
 		StoreManager:      storeManager,
+		ParallelNicConfig: parallelNicConfig,
 	}, nil
 }
 
@@ -173,7 +175,7 @@ func (p *GenericPlugin) Apply() error {
 		defer exit()
 	}
 
-	if err := utils.SyncNodeState(p.DesireState, pfsToSkip); err != nil {
+	if err := utils.SyncNodeState(p.DesireState, pfsToSkip, p.ParallelNicConfig); err != nil {
 		// Catch the "cannot allocate memory" error and try to use PCI realloc
 		if errors.Is(err, syscall.ENOMEM) {
 			p.addToDesiredKernelArgs(utils.KernelArgPciRealloc)

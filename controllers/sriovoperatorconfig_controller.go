@@ -199,6 +199,11 @@ func (r *SriovOperatorConfigReconciler) syncConfigDaemonSet(ctx context.Context,
 	} else {
 		data.Data["UsedSystemdMode"] = false
 	}
+	if parallelConfig, ok := dc.Spec.FeatureGates["parallelNicConfig"]; ok {
+		data.Data["ParallelNicConfig"] = parallelConfig
+	} else {
+		data.Data["ParallelNicConfig"] = false
+	}
 
 	envCniBinPath := os.Getenv("SRIOV_CNI_BIN_PATH")
 	if envCniBinPath == "" {

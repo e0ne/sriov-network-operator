@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -206,8 +207,71 @@ func DiscoverSriovDevices(withUnsupported bool, storeManager StoreManagerInterfa
 }
 
 // SyncNodeState Attempt to update the node state to match the desired state
-func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState, pfsToConfig map[string]bool) error {
-	return ConfigSriovInterfaces(newState.Spec.Interfaces, newState.Status.Interfaces, pfsToConfig)
+func SyncNodeState(newState *sriovnetworkv1.SriovNetworkNodeState, pfsToConfig map[string]bool, parallelNicConfig bool) error {
+	if !parallelNicConfig {
+		return ConfigSriovInterfaces(newState.Spec.Interfaces, newState.Status.Interfaces, pfsToConfig)
+	}
+	return ConfigSriovInterfacesInParallel(newState.Spec.Interfaces, newState.Status.Interfaces, pfsToConfig)
+}
+
+func ConfigSriovInterfacesInParallel(interfaces []sriovnetworkv1.Interface, ifaceStatuses []sriovnetworkv1.InterfaceExt, pfsToConfig map[string]bool) error {
+	log.Log.V(2).Info("ConfigSriovInterfacesInParallel(): start sriov configuration")
+	if IsKernelLockdownMode(true) && hasMellanoxInterfacesInSpec(ifaceStatuses, interfaces) {
+		log.Log.Error(nil, "cannot use mellanox devices when in kernel lockdown mode")
+		return fmt.Errorf("cannot use mellanox devices when in kernel lockdown mode")
+	}
+	// TODO(e0ne): store all errors in SriovNetworkNodeState
+	var result error
+	wg := sync.WaitGroup{}
+	for _, ifaceStatus := range ifaceStatuses {
+		configured := false
+		for _, iface := range interfaces {
+			if iface.PciAddress == ifaceStatus.PciAddress {
+				configured = true
+
+				if skip := pfsToConfig[iface.PciAddress]; skip {
+					break
+				}
+
+				if !NeedUpdate(&iface, &ifaceStatus) {
+					log.Log.V(2).Info("syncNodeState(): no need update interface", "address", iface.PciAddress)
+					break
+				}
+
+				wg.Add(1)
+				go func(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetworkv1.InterfaceExt) {
+					if err := configSriovDevice(iface, ifaceStatus); err != nil {
+						log.Log.Error(err, "ConfigSriovInterfacesInParallel(): fail to configure sriov interface. resetting interface.", "address", iface.PciAddress)
+						result = err
+						if resetErr := resetSriovDevice(*ifaceStatus); resetErr != nil {
+							log.Log.Error(resetErr, "SyncNodeState(): fail to reset on error SR-IOV interface")
+							result = resetErr
+						}
+					}
+					wg.Done()
+				}(&iface, &ifaceStatus)
+
+				break
+			}
+		}
+		if !configured && ifaceStatus.NumVfs > 0 {
+			if skip := pfsToConfig[ifaceStatus.PciAddress]; skip {
+				continue
+			}
+
+			if err := resetSriovDevice(ifaceStatus); err != nil {
+				log.Log.V(2).Info("ConfigSriovInterfacesInParallel(): reset failed", "address", ifaceStatus.PciAddress)
+				result = err
+			}
+		}
+	}
+	wg.Wait()
+	if result != nil {
+		log.Log.Error(result, "ConfigSriovInterfacesInParallel(): fail to configure sriov interface")
+		return result
+	}
+	log.Log.V(2).Info("ConfigSriovInterfacesInParallel(): sriov configuration finished")
+	return nil
 }
 
 func ConfigSriovInterfaces(interfaces []sriovnetworkv1.Interface, ifaceStatuses []sriovnetworkv1.InterfaceExt, pfsToConfig map[string]bool) error {
@@ -244,6 +308,7 @@ func ConfigSriovInterfaces(interfaces []sriovnetworkv1.Interface, ifaceStatuses 
 
 					break
 				}
+
 				if err = configSriovDevice(&iface, &ifaceStatus); err != nil {
 					log.Log.Error(err, "SyncNodeState(): fail to configure sriov interface. resetting interface.", "address", iface.PciAddress)
 					if iface.ExternallyManaged {
@@ -558,6 +623,7 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 			return err
 		}
 	}
+	log.Log.V(2).Info("configSriovDevice(): config interface completed", "address", ifaceStatus.PciAddress)
 	return nil
 }
 
@@ -602,6 +668,7 @@ func setNetdevMTU(pciAddr string, mtu int) error {
 		log.Log.Error(err, "setNetdevMTU(): fail to write mtu file after retrying")
 		return err
 	}
+	log.Log.V(2).Info("setNetdevMTU(): set MTU for device completed", "address", pciAddr, "mtu", mtu)
 	return nil
 }
 
