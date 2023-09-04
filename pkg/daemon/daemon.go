@@ -3,7 +3,6 @@ package daemon
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -25,7 +24,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -590,7 +588,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 			glog.Info("nodeStateSyncHandler(): disable drain is true skipping drain")
 		} else {
 			glog.Info("nodeStateSyncHandler(): drain node")
-			if err := dn.drainNode(); err != nil {
+			if err := utils.AnnotateNode(dn.name, consts.DrainRequired, dn.kubeClient); err != nil {
 				return err
 			}
 		}
@@ -639,7 +637,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 		}
 	} else {
 		if !utils.NodeHasAnnotation(*dn.node, consts.NodeDrainAnnotation, consts.DrainIdle) {
-			if err := dn.annotateNode(dn.name, consts.DrainIdle); err != nil {
+			if err := utils.AnnotateNode(dn.name, consts.DrainIdle, dn.kubeClient); err != nil {
 				glog.Errorf("nodeStateSyncHandler(): failed to annotate node: %v", err)
 				return err
 			}
@@ -690,7 +688,7 @@ func (dn *Daemon) completeDrain() error {
 		}
 	}
 
-	if err := dn.annotateNode(dn.name, consts.DrainIdle); err != nil {
+	if err := utils.AnnotateNode(dn.name, consts.DrainIdle, dn.kubeClient); err != nil {
 		glog.Errorf("completeDrain(): failed to annotate node: %v", err)
 		return err
 	}
@@ -776,46 +774,6 @@ func rebootNode() {
 	}
 }
 
-func (dn *Daemon) annotateNode(node, value string) error {
-	glog.Infof("annotateNode(): Annotate node %s with: %s", node, value)
-
-	oldNode, err := dn.kubeClient.CoreV1().Nodes().Get(context.Background(), dn.name, metav1.GetOptions{})
-	if err != nil {
-		glog.Infof("annotateNode(): Failed to get node %s %v, retrying", node, err)
-		return err
-	}
-	oldData, err := json.Marshal(oldNode)
-	if err != nil {
-		return err
-	}
-
-	newNode := oldNode.DeepCopy()
-	if newNode.Annotations == nil {
-		newNode.Annotations = map[string]string{}
-	}
-	if newNode.Annotations[consts.NodeDrainAnnotation] != value {
-		newNode.Annotations[consts.NodeDrainAnnotation] = value
-		newData, err := json.Marshal(newNode)
-		if err != nil {
-			return err
-		}
-		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
-		if err != nil {
-			return err
-		}
-		_, err = dn.kubeClient.CoreV1().Nodes().Patch(context.Background(),
-			dn.name,
-			types.StrategicMergePatchType,
-			patchBytes,
-			metav1.PatchOptions{})
-		if err != nil {
-			glog.Infof("annotateNode(): Failed to patch node %s: %v", node, err)
-			return err
-		}
-	}
-	return nil
-}
-
 func (dn *Daemon) getNodeMachinePool() error {
 	desiredConfig, ok := dn.node.Annotations[daemonconsts.DesiredMachineConfigAnnotationKey]
 	if !ok {
@@ -839,7 +797,7 @@ func (dn *Daemon) getNodeMachinePool() error {
 
 func (dn *Daemon) applyDrainRequired() error {
 	glog.V(2).Info("applyDrainRequired(): no other node is draining")
-	err := dn.annotateNode(dn.name, consts.DrainRequired)
+	err := utils.AnnotateNode(dn.name, consts.DrainRequired, dn.kubeClient)
 	if err != nil {
 		glog.Errorf("applyDrainRequired(): Failed to annotate node: %v", err)
 		return err
@@ -891,7 +849,7 @@ func (dn *Daemon) pauseMCP() error {
 				glog.V(2).Infof("pauseMCP(): Failed to pause MCP %s: %v", dn.mcpName, err)
 				return
 			}
-			err = dn.annotateNode(dn.name, consts.DrainMcpPaused)
+			err = utils.AnnotateNode(dn.name, consts.DrainMcpPaused, dn.kubeClient)
 			if err != nil {
 				glog.V(2).Infof("pauseMCP(): Failed to annotate node: %v", err)
 				return
@@ -907,7 +865,7 @@ func (dn *Daemon) pauseMCP() error {
 				glog.V(2).Infof("pauseMCP(): fail to resume MCP %s: %v", dn.mcpName, err)
 				return
 			}
-			err = dn.annotateNode(dn.name, consts.Draining)
+			err = utils.AnnotateNode(dn.name, consts.Draining, dn.kubeClient)
 			if err != nil {
 				glog.V(2).Infof("pauseMCP(): Failed to annotate node: %v", err)
 				return

@@ -2,7 +2,12 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/consts"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	"k8s.io/client-go/kubernetes"
 	"os"
 
 	"github.com/golang/glog"
@@ -118,4 +123,45 @@ func NodeHasAnnotation(node corev1.Node, annoKey string, value string) bool {
 		return true
 	}
 	return false
+}
+
+func AnnotateNode(node, value string, kubeClient kubernetes.Interface) error {
+	glog.Infof("annotateNode(): Annotate node %s with: %s", node, value)
+	oldNode, err := kubeClient.CoreV1().Nodes().Get(context.Background(), node, metav1.GetOptions{})
+	if err != nil {
+		glog.Infof("annotateNode(): Failed to get node %s %v, retrying", node, err)
+		return err
+	}
+
+	oldData, err := json.Marshal(oldNode)
+	if err != nil {
+		return err
+	}
+
+	newNode := oldNode.DeepCopy()
+	if newNode.Annotations == nil {
+		newNode.Annotations = map[string]string{}
+	}
+
+	if newNode.Annotations[consts.NodeDrainAnnotation] != value {
+		newNode.Annotations[consts.NodeDrainAnnotation] = value
+		newData, err := json.Marshal(newNode)
+		if err != nil {
+			return err
+		}
+		patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Node{})
+		if err != nil {
+			return err
+		}
+		_, err = kubeClient.CoreV1().Nodes().Patch(context.Background(),
+			node,
+			types.StrategicMergePatchType,
+			patchBytes,
+			metav1.PatchOptions{})
+		if err != nil {
+			glog.Infof("annotateNode(): Failed to patch node %s: %v", node, err)
+			return err
+		}
+	}
+	return nil
 }
