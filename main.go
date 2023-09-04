@@ -20,7 +20,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/golang/glog"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/kubectl/pkg/drain"
 	"os"
+	"time"
 
 	netattdefv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
 	openshiftconfigv1 "github.com/openshift/api/config/v1"
@@ -131,6 +135,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	kubeclient := kubernetes.NewForConfigOrDie(ctrl.GetConfigOrDie())
+
 	if err = (&controllers.SriovNetworkReconciler{
 		Client: mgrGlobal.GetClient(),
 		Scheme: mgrGlobal.GetScheme(),
@@ -166,6 +172,31 @@ func main() {
 		OpenshiftContext: openshiftContext,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SriovNetworkPoolConfig")
+		os.Exit(1)
+	}
+	if err = (&controllers.DrainReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Drainer: &drain.Helper{
+			Client:              kubeclient,
+			Force:               true,
+			IgnoreAllDaemonSets: true,
+			DeleteEmptyDirData:  true,
+			GracePeriodSeconds:  -1,
+			Timeout:             90 * time.Second,
+			OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
+				verbStr := "Deleted"
+				if usingEviction {
+					verbStr = "Evicted"
+				}
+				glog.Info(fmt.Sprintf("%s pod from Node %s/%s", verbStr, pod.Namespace, pod.Name))
+			},
+			//Out:    writer{glog.Info},
+			//ErrOut: writer{glog.Error},
+			Ctx: context.Background(),
+		},
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "DrainReconciler")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
