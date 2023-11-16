@@ -46,9 +46,10 @@ const (
 )
 
 type SriovConfig struct {
-	Spec            sriovnetworkv1.SriovNetworkNodeStateSpec `yaml:"spec"`
-	UnsupportedNics bool                                     `yaml:"unsupportedNics"`
-	PlatformType    utils.PlatformType                       `yaml:"platformType"`
+	Spec              sriovnetworkv1.SriovNetworkNodeStateSpec `yaml:"spec"`
+	UnsupportedNics   bool                                     `yaml:"unsupportedNics"`
+	PlatformType      utils.PlatformType                       `yaml:"platformType"`
+	ParallelNicConfig bool                                     `yaml:"parallelNicConfig"`
 }
 
 type SriovResult struct {
@@ -67,7 +68,7 @@ func ReadConfFile() (spec *SriovConfig, err error) {
 	return spec, err
 }
 
-func WriteConfFile(newState *sriovnetworkv1.SriovNetworkNodeState, unsupportedNics bool, platformType utils.PlatformType) (bool, error) {
+func WriteConfFile(newState *sriovnetworkv1.SriovNetworkNodeState, unsupportedNics bool, platformType utils.PlatformType, parallelNicConfig bool) (bool, error) {
 	newFile := false
 	// remove the device plugin revision as we don't need it here
 	newState.Spec.DpConfigVersion = ""
@@ -76,6 +77,7 @@ func WriteConfFile(newState *sriovnetworkv1.SriovNetworkNodeState, unsupportedNi
 		newState.Spec,
 		unsupportedNics,
 		platformType,
+		parallelNicConfig,
 	}
 
 	_, err := os.Stat(SriovHostSystemdConfigPath)

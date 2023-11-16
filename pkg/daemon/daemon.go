@@ -576,7 +576,7 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	// or there is a new config we need to apply
 	// When using systemd configuration we write the file
 	if dn.useSystemdService {
-		systemdConfModified, err := systemd.WriteConfFile(latestState, dn.devMode, dn.platform)
+		systemdConfModified, err := systemd.WriteConfFile(latestState, dn.devMode, dn.platform, dn.parallelNicConfig)
 		if err != nil {
 			log.Log.Error(err, "nodeStateSyncHandler(): failed to write configuration file for systemd mode")
 			return err

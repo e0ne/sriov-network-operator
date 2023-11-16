@@ -89,9 +89,10 @@ func runServiceCmd(cmd *cobra.Command, args []string) error {
 		}
 
 		nodeStateSpec = &systemd.SriovConfig{
-			Spec:            sriovv1.SriovNetworkNodeStateSpec{},
-			UnsupportedNics: false,
-			PlatformType:    utils.Baremetal,
+			Spec:              sriovv1.SriovNetworkNodeStateSpec{},
+			UnsupportedNics:   false,
+			PlatformType:      utils.Baremetal,
+			ParallelNicConfig: false,
 		}
 	}
 
@@ -122,7 +123,7 @@ func runServiceCmd(cmd *cobra.Command, args []string) error {
 		}
 		// TODO(e0ne): read ParallelNicConfig from SriovOperatorConfig CR
 		// Create the generic plugin
-		configPlugin, err = generic.NewGenericPlugin(true, hostManager, storeManager, false)
+		configPlugin, err = generic.NewGenericPlugin(true, hostManager, storeManager, nodeStateSpec.ParallelNicConfig)
 		if err != nil {
 			setupLog.Error(err, "failed to create generic plugin")
 			return fmt.Errorf("sriov-config-service failed to create generic plugin %v", err)
