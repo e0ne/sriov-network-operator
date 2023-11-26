@@ -188,6 +188,82 @@ var _ = Describe("[sriov] operator", func() {
 			})
 		})
 
+		Context("LogLevel affects operator's logs", func() {
+			It("when set to 0 no lifecycle logs are present", func() {
+				if discovery.Enabled() {
+					Skip("Test unsuitable to be run in discovery mode")
+				}
+
+				initialLogLevelValue := getOperatorConfigLogLevel()
+				DeferCleanup(func() {
+					By("Restore LogLevel to its initial value")
+					setOperatorConfigLogLevel(initialLogLevelValue)
+				})
+
+				initialDisableDrain, err := cluster.GetNodeDrainState(clients, operatorNamespace)
+				Expect(err).ToNot(HaveOccurred())
+
+				DeferCleanup(func() {
+					By("Restore DisableDrain to its initial value")
+					Eventually(func() error {
+						return cluster.SetDisableNodeDrainState(clients, operatorNamespace, initialDisableDrain)
+					}, 1*time.Minute, 5*time.Second).ShouldNot(HaveOccurred())
+				})
+
+				By("Set operator LogLevel to 2")
+				setOperatorConfigLogLevel(2)
+
+				By("Flip DisableDrain to trigger operator activity")
+				since := time.Now()
+				Eventually(func() error {
+					return cluster.SetDisableNodeDrainState(clients, operatorNamespace, !initialDisableDrain)
+				}, 1*time.Minute, 5*time.Second).ShouldNot(HaveOccurred())
+
+				By("Assert logs contains verbose output")
+				Eventually(func(g Gomega) {
+					logs := getOperatorLogs(since)
+					g.Expect(logs).To(
+						ContainElement(And(
+							ContainSubstring("Reconciling SriovOperatorConfig"),
+						)),
+					)
+
+					// Should contain verbose logging
+					g.Expect(logs).To(
+						ContainElement(
+							ContainSubstring("Start to sync webhook objects"),
+						),
+					)
+				}, 1*time.Minute, 5*time.Second).Should(Succeed())
+
+				By("Reduce operator LogLevel to 0")
+				setOperatorConfigLogLevel(0)
+
+				By("Flip DisableDrain again to trigger operator activity")
+				since = time.Now()
+				Eventually(func() error {
+					return cluster.SetDisableNodeDrainState(clients, operatorNamespace, initialDisableDrain)
+				}, 1*time.Minute, 5*time.Second).ShouldNot(HaveOccurred())
+
+				By("Assert logs contains less operator activity")
+				Eventually(func(g Gomega) {
+					logs := getOperatorLogs(since)
+					g.Expect(logs).To(
+						ContainElement(And(
+							ContainSubstring("Reconciling SriovOperatorConfig"),
+						)),
+					)
+
+					// Should not contain verbose logging
+					g.Expect(logs).ToNot(
+						ContainElement(
+							ContainSubstring("Start to sync webhook objects"),
+						),
+					)
+				}, 1*time.Minute, 5*time.Second).Should(Succeed())
+
+			})
+		})
 	})
 
 	Describe("Generic SriovNetworkNodePolicy", func() {
@@ -1116,6 +1192,83 @@ var _ = Describe("[sriov] operator", func() {
 						"openshift.io/testresource":  int64(3),
 						"openshift.io/testresource1": int64(2),
 					}))
+				})
+
+				It("Should configure the mtu only for vfs which are part of the partition", func() {
+					defaultMtu := 1500
+					newMtu := 2000
+
+					node := sriovInfos.Nodes[0]
+					intf, err := sriovInfos.FindOneSriovDevice(node)
+					Expect(err).ToNot(HaveOccurred())
+
+					_, err = network.CreateSriovPolicy(clients, "test-policy-", operatorNamespace, intf.Name+"#0-1", node, 5, testResourceName, "netdevice", func(policy *sriovv1.SriovNetworkNodePolicy) {
+						policy.Spec.Mtu = newMtu
+					})
+					Expect(err).ToNot(HaveOccurred())
+
+					Eventually(func() sriovv1.Interfaces {
+						nodeState, err := clients.SriovNetworkNodeStates(operatorNamespace).Get(context.Background(), node, metav1.GetOptions{})
+						Expect(err).ToNot(HaveOccurred())
+						return nodeState.Spec.Interfaces
+					}, 3*time.Minute, 1*time.Second).Should(ContainElement(MatchFields(
+						IgnoreExtras,
+						Fields{
+							"Name":   Equal(intf.Name),
+							"NumVfs": Equal(5),
+							"Mtu":    Equal(newMtu),
+							"VfGroups": ContainElement(
+								MatchFields(
+									IgnoreExtras,
+									Fields{
+										"ResourceName": Equal(testResourceName),
+										"DeviceType":   Equal("netdevice"),
+										"VfRange":      Equal("0-1"),
+									})),
+						})))
+
+					WaitForSRIOVStable()
+
+					Eventually(func() int64 {
+						testedNode, err := clients.CoreV1Interface.Nodes().Get(context.Background(), node, metav1.GetOptions{})
+						Expect(err).ToNot(HaveOccurred())
+						resNum := testedNode.Status.Allocatable["openshift.io/testresource"]
+						capacity, _ := resNum.AsInt64()
+						return capacity
+					}, 3*time.Minute, time.Second).Should(Equal(int64(2)))
+
+					By(fmt.Sprintf("verifying that only VF 0 and 1 have mtu set to %d", newMtu))
+					Eventually(func() sriovv1.InterfaceExts {
+						nodeState, err := clients.SriovNetworkNodeStates(operatorNamespace).Get(context.Background(), node, metav1.GetOptions{})
+						Expect(err).ToNot(HaveOccurred())
+						return nodeState.Status.Interfaces
+					}, 3*time.Minute, 1*time.Second).Should(ContainElement(MatchFields(
+						IgnoreExtras,
+						Fields{
+							"VFs": SatisfyAll(
+								ContainElement(
+									MatchFields(
+										IgnoreExtras,
+										Fields{
+											"VfID": Equal(0),
+											"Mtu":  Equal(newMtu),
+										})),
+								ContainElement(
+									MatchFields(
+										IgnoreExtras,
+										Fields{
+											"VfID": Equal(1),
+											"Mtu":  Equal(newMtu),
+										})),
+								ContainElement(
+									MatchFields(
+										IgnoreExtras,
+										Fields{
+											"VfID": Equal(2),
+											"Mtu":  Equal(defaultMtu),
+										})),
+							),
+						})))
 				})
 
 				// 27630
@@ -2434,6 +2587,66 @@ func setSriovOperatorSpecFlag(flagName string, flagValue bool) {
 			}
 		}, 1*time.Minute, 10*time.Second).WithOffset(1).Should(Succeed())
 	}
+}
+
+func setOperatorConfigLogLevel(level int) {
+	instantBeforeSettingLogLevel := time.Now()
+
+	Eventually(func(g Gomega) {
+		cfg := sriovv1.SriovOperatorConfig{}
+		err := clients.Get(context.TODO(), runtimeclient.ObjectKey{
+			Name:      "default",
+			Namespace: operatorNamespace,
+		}, &cfg)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		if cfg.Spec.LogLevel == level {
+			return
+		}
+
+		cfg.Spec.LogLevel = level
+
+		err = clients.Update(context.TODO(), &cfg)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		logs := getOperatorLogs(instantBeforeSettingLogLevel)
+		g.Expect(logs).To(
+			ContainElement(
+				ContainSubstring(fmt.Sprintf(`"new-level": %d`, level)),
+			),
+		)
+	}, 1*time.Minute, 5*time.Second).Should(Succeed())
+}
+
+func getOperatorConfigLogLevel() int {
+	cfg := sriovv1.SriovOperatorConfig{}
+	err := clients.Get(context.TODO(), runtimeclient.ObjectKey{
+		Name:      "default",
+		Namespace: operatorNamespace,
+	}, &cfg)
+	Expect(err).ToNot(HaveOccurred())
+
+	return cfg.Spec.LogLevel
+}
+
+func getOperatorLogs(since time.Time) []string {
+	podList, err := clients.Pods(operatorNamespace).List(context.Background(), metav1.ListOptions{
+		LabelSelector: "name=sriov-network-operator",
+	})
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+	ExpectWithOffset(1, podList.Items).To(HaveLen(1), "One operator pod expected")
+
+	pod := podList.Items[0]
+	logStart := metav1.NewTime(since)
+	rawLogs, err := clients.Pods(pod.Namespace).
+		GetLogs(pod.Name, &corev1.PodLogOptions{
+			Container: pod.Spec.Containers[0].Name,
+			SinceTime: &logStart,
+		}).
+		DoRaw(context.Background())
+	ExpectWithOffset(1, err).ToNot(HaveOccurred())
+
+	return strings.Split(string(rawLogs), "\n")
 }
 
 func assertObjectIsNotFound(name string, obj runtimeclient.Object) {

@@ -16,6 +16,12 @@ import (
 	"syscall"
 	"time"
 
+	"encoding/hex"
+	"hash/fnv"
+	"sort"
+
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/cenkalti/backoff"
 	"github.com/jaypipes/ghw"
 	"github.com/vishvananda/netlink"
@@ -428,11 +434,11 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 
 			err = setSriovNumVfs(iface.PciAddress, iface.NumVfs)
 			if err != nil {
-				err = RemoveUdevRule(iface.PciAddress)
-				if err != nil {
-					return err
+				log.Log.Error(err, "configSriovDevice(): fail to set NumVfs for device", "device", iface.PciAddress)
+				errRemove := RemoveUdevRule(iface.PciAddress)
+				if errRemove != nil {
+					log.Log.Error(errRemove, "configSriovDevice(): fail to remove udev rule", "device", iface.PciAddress)
 				}
-				log.Log.Error(nil, "configSriovDevice(): fail to set NumVfs for device", "device", iface.PciAddress)
 				return err
 			}
 		}
@@ -458,22 +464,24 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 		}
 
 		for _, addr := range vfAddrs {
-			var group sriovnetworkv1.VfGroup
-			i := 0
-			var dpdkDriver string
-			var isRdma bool
+			var group *sriovnetworkv1.VfGroup
+
 			vfID, err := dputils.GetVFID(addr)
-			for i, group = range iface.VfGroups {
-				if err != nil {
-					log.Log.Error(err, "configSriovDevice(): unable to get VF id", "device", iface.PciAddress)
-				}
-				if sriovnetworkv1.IndexInRange(vfID, group.VfRange) {
-					isRdma = group.IsRdma
-					if sriovnetworkv1.StringInArray(group.DeviceType, DpdkDrivers) {
-						dpdkDriver = group.DeviceType
-					}
+			if err != nil {
+				log.Log.Error(err, "configSriovDevice(): unable to get VF id", "device", iface.PciAddress)
+				return err
+			}
+
+			for i := range iface.VfGroups {
+				if sriovnetworkv1.IndexInRange(vfID, iface.VfGroups[i].VfRange) {
+					group = &iface.VfGroups[i]
 					break
 				}
+			}
+
+			// VF group not found.
+			if group == nil {
+				continue
 			}
 
 			// only set GUID and MAC for VF with default driver
@@ -514,26 +522,26 @@ func configSriovDevice(iface *sriovnetworkv1.Interface, ifaceStatus *sriovnetwor
 				}
 			}
 
-			if err = unbindDriverIfNeeded(addr, isRdma); err != nil {
+			if err = unbindDriverIfNeeded(addr, group.IsRdma); err != nil {
 				return err
 			}
 
-			if dpdkDriver == "" {
+			if !sriovnetworkv1.StringInArray(group.DeviceType, DpdkDrivers) {
 				if err := BindDefaultDriver(addr); err != nil {
 					log.Log.Error(err, "configSriovDevice(): fail to bind default driver for device", "device", addr)
 					return err
 				}
 				// only set MTU for VF with default driver
-				if iface.VfGroups[i].Mtu > 0 {
-					if err := setNetdevMTU(addr, iface.VfGroups[i].Mtu); err != nil {
+				if group.Mtu > 0 {
+					if err := setNetdevMTU(addr, group.Mtu); err != nil {
 						log.Log.Error(err, "configSriovDevice(): fail to set mtu for VF", "address", addr)
 						return err
 					}
 				}
 			} else {
-				if err := BindDpdkDriver(addr, dpdkDriver); err != nil {
+				if err := BindDpdkDriver(addr, group.DeviceType); err != nil {
 					log.Log.Error(err, "configSriovDevice(): fail to bind driver for device",
-						"driver", dpdkDriver, "device", addr)
+						"driver", group.DeviceType, "device", addr)
 					return err
 				}
 			}
@@ -919,6 +927,22 @@ func RunCommand(command string, args ...string) (string, error) {
 	err := cmd.Run()
 	log.Log.V(2).Info("RunCommand()", "output", stdout.String(), "error", err)
 	return stdout.String(), err
+}
+
+func HashConfigMap(cm *corev1.ConfigMap) string {
+	var keys []string
+	for k := range cm.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	hash := fnv.New128()
+	for _, k := range keys {
+		hash.Write([]byte(k))
+		hash.Write([]byte(cm.Data[k]))
+	}
+	hashed := hash.Sum(nil)
+	return hex.EncodeToString(hashed)
 }
 
 func hasMellanoxInterfacesInSpec(ifaceStatuses sriovnetworkv1.InterfaceExts, ifaceSpecs sriovnetworkv1.Interfaces) bool {
