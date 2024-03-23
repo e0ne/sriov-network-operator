@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +23,8 @@ import (
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/utils"
 	"github.com/k8snetworkplumbingwg/sriov-network-operator/pkg/vars"
 )
+
+var ManifestsPath = "./bindata/manifests"
 
 type network struct {
 	utilsHelper utils.CmdInterface
@@ -420,4 +423,41 @@ func (n *network) GetPciAddressFromInterfaceName(interfaceName string) (string, 
 	pciAddress := filepath.Base(pciDevDir)
 	log.Log.V(2).Info("GetPciAddressFromInterfaceName(): result", "interface", interfaceName, "pci address", pciAddress)
 	return pciAddress, nil
+}
+
+func (n *network) DiscoverRDMASubsystem() (string, error) {
+	log.Log.Info("DiscoverRDMASubsystem(): retrieving RDMA subsystem mode")
+	subsystem, err := n.netlinkLib.DiscoverRDMASubsystem()
+
+	if err != nil {
+		log.Log.Error(err, "DiscoverRDMASubsystem(): failed to get RDMA subsystem mode")
+		return "", err
+	}
+
+	return subsystem, nil
+}
+
+func (n *network) SetRDMASubsystem(mode string) error {
+	log.Log.Info("SetRDMASubsystem(): Updating RDMA subsystem mode")
+
+	modeValue := 1
+	if mode == "exclusive" {
+		modeValue = 0
+	}
+	config := fmt.Sprintf("options ib_core netns_mode=%d\n", modeValue)
+	err := os.WriteFile("/etc/modprobe.d/ib_core.conf", []byte(config), 0644)
+
+	if err != nil {
+		log.Log.Error(err, "SetRDMASubsystem(): failed to write ib_core config")
+		return fmt.Errorf("failed to write ib_core config: %v", err)
+	}
+
+	err = os.WriteFile(path.Join(consts.Chroot, "/etc/modprobe.d/ib_core.conf"), []byte(config), 0644)
+
+	if err != nil {
+		log.Log.Error(err, "SetRDMASubsystem(): failed to write ib_core config")
+		return fmt.Errorf("failed to write ib_core config: %v", err)
+	}
+
+	return nil
 }

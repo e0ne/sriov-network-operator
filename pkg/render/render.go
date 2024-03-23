@@ -77,6 +77,14 @@ func RenderDir(manifestDir string, d *RenderData) ([]*unstructured.Unstructured,
 	return out, nil
 }
 
+func RenderToString(path string, d *RenderData) (string, error) {
+	rendered, err := renderTemplate(path, d)
+	if err != nil {
+		return "", err
+	}
+	return rendered.String(), nil
+}
+
 // RenderTemplate reads, renders, and attempts to parse a yaml or
 // json file representing one or more k8s api objects
 func RenderTemplate(path string, d *RenderData) ([]*unstructured.Unstructured, error) {
