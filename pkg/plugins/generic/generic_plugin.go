@@ -184,6 +184,21 @@ func (p *GenericPlugin) Apply() error {
 		defer exit()
 	}
 
+	//var stdout, stderr bytes.Buffer
+	//cmd := exec.Command("/bin/sh", "rdma", "system", "set", "net", "exclusive")
+	//cmd.Stdout = &stdout
+	//cmd.Stderr = &stderr
+	//
+	//if err := cmd.Run(); err != nil {
+	//	// if grubby is not there log and assume kernel args are set correctly.
+	//	if utils.IsCommandNotFound(err) {
+	//		log.Log.Error(err, "generic plugin (): can't set rdma mode exclusive")
+	//		return err
+	//	}
+	//	log.Log.Error(err, "generic plugin (): can't set rdma mode exclusive!!!")
+	//	return err
+	//}
+
 	if err := p.helpers.ConfigSriovInterfaces(p.helpers, p.DesireState.Spec.Interfaces,
 		p.DesireState.Status.Interfaces, p.pfsToSkip, p.skipVFConfiguration); err != nil {
 		// Catch the "cannot allocate memory" error and try to use PCI realloc
@@ -191,6 +206,23 @@ func (p *GenericPlugin) Apply() error {
 			p.addToDesiredKernelArgs(consts.KernelArgPciRealloc)
 		}
 		return err
+	}
+
+	if vars.UsingSystemdMode && p.DesireState {
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command("/usr/bin/rdma", "system", "set", "net", "exclusive")
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			// if grubby is not there log and assume kernel args are set correctly.
+			if utils.IsCommandNotFound(err) {
+				log.Log.Error(err, "generic plugin (): can't set rdma mode exclusive")
+				return err
+			}
+			log.Log.Error(err, "generic plugin (): can't set rdma mode exclusive!!!")
+			return err
+		}
 	}
 	p.LastState = &sriovnetworkv1.SriovNetworkNodeState{}
 	*p.LastState = *p.DesireState
