@@ -46,9 +46,6 @@ type SriovNetworkNodePolicySpec struct {
 	DeviceType string `json:"deviceType,omitempty"`
 	// RDMA mode. Defaults to false.
 	IsRdma bool `json:"isRdma,omitempty"`
-	// +kubebuilder:validation:Enum=shared;exclusive
-	// RDMA subsystem. Allowed value "shared", "exclusive".
-	RdmaMode string `json:"rdmaMode,omitempty"`
 	// mount vhost-net device. Defaults to false.
 	NeedVhostNet bool `json:"needVhostNet,omitempty"`
 	// +kubebuilder:validation:Enum=eth;ETH;ib;IB
