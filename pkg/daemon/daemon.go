@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -413,7 +414,19 @@ func (dn *Daemon) nodeStateSyncHandler() error {
 	// When using systemd configuration we write the file
 	if vars.UsingSystemdMode {
 		log.Log.V(0).Info("nodeStateSyncHandler(): writing systemd config file to host")
-		systemdConfModified, err := systemd.WriteConfFile(dn.desiredNodeState)
+		// get node object
+		node := &corev1.Node{}
+		err := dn.client.Get(context.TODO(), client.ObjectKey{Name: vars.NodeName}, node)
+		if err != nil {
+			log.Log.Error(err, "nodeStateSyncHandler(): failed to get node object")
+			return err
+		}
+		netPoolConfig, _, err := utils.FindNodePoolConfig(context.Background(), node, dn.client)
+		if err != nil {
+			log.Log.Error(err, "nodeStateSyncHandler(): failed to get SriovNetworkPoolConfig for the current node")
+		}
+
+		systemdConfModified, err := systemd.WriteConfFile(dn.desiredNodeState, netPoolConfig)
 		if err != nil {
 			log.Log.Error(err, "nodeStateSyncHandler(): failed to write configuration file for systemd mode")
 			return err

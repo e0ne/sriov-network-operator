@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/vishvananda/netlink"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	sriovnetworkv1 "github.com/k8snetworkplumbingwg/sriov-network-operator/api/v1"
@@ -516,6 +517,31 @@ func (k *kernel) InstallRDMA(packageManager string) error {
 	stdout, stderr, err := k.utilsHelper.RunCommand("/bin/sh", "-c", fmt.Sprintf("%s %s install -y rdma-core", chrootDefinition, packageManager))
 	if err != nil && len(stderr) != 0 {
 		log.Log.Error(err, "InstallRDMA(): failed to install RDMA package", "stdout", stdout, "stderr", stderr)
+		return err
+	}
+
+	return nil
+}
+
+func (k *kernel) GetRDMASubsystem() (string, error) {
+	log.Log.Info("GetRDMASubsystem(): retrieving RDMA subsystem mode")
+	subsystem, err := netlink.RdmaSystemGetNetnsMode()
+
+	if err != nil {
+		log.Log.Error(err, "GetRDMASubsystem(): failed to get RDMA subsystem mode")
+		return "", err
+	}
+
+	return subsystem, nil
+}
+
+func (k *kernel) SetRDMASubsystem(mode string) error {
+	log.Log.Info("SetRDMASubsystem(): Updating RDMA subsystem mode")
+	chrootDefinition := utils.GetChrootExtension()
+
+	stdout, stderr, err := k.utilsHelper.RunCommand("/bin/sh", "-c", fmt.Sprintf("%s /usr/bin/rdma system set net %s", chrootDefinition, mode))
+	if err != nil && len(stderr) != 0 {
+		log.Log.Error(err, "SetRDMASubsystem(): failed to update RDMA subsystem mode", "stdout", stdout, "stderr", stderr)
 		return err
 	}
 
