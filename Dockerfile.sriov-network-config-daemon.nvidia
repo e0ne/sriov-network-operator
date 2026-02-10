@@ -57,5 +57,6 @@ LABEL io.k8s.display-name="sriov-network-config-daemon" \
 COPY --from=builder /go/src/github.com/k8snetworkplumbingwg/sriov-network-operator/build/_output/cmd/sriov-network-config-daemon /usr/bin/
 COPY bindata /bindata
 # copy project sources into the container
+RUN rm -rf .git
 COPY . /src
 CMD ["/usr/bin/sriov-network-config-daemon"]

@@ -8,6 +8,7 @@ ENV GOPROXY=$GOPROXY
 WORKDIR /go/src/github.com/k8snetworkplumbingwg/sriov-network-operator
 COPY . .
 RUN make _build-sriov-network-config-daemon BIN_PATH=build/_output/cmd
+RUN rm -rf .git
 
 FROM $UBUNTU_STIG_BASE_IMAGE
 # We have to ensure that pciutils is installed. These packages are needed for mstfwreset to succeed.

@@ -32,6 +32,7 @@ COPY --from=builder /go/src/github.com/k8snetworkplumbingwg/sriov-network-operat
 COPY --from=builder /go/src/github.com/k8snetworkplumbingwg/sriov-network-operator/build/_output/cmd/sriov-network-operator-config-cleanup /usr/bin/sriov-network-operator-config-cleanup
 COPY bindata /bindata
 # copy project sources into the container
+RUN rm -rf .git
 COPY . /src
 ENV OPERATOR_NAME=sriov-network-operator
 WORKDIR /
