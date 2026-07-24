@@ -355,9 +355,6 @@ func validatePolicyForNodeState(policy *sriovnetworkv1.SriovNetworkNodePolicy, s
 		if err == nil {
 			interfaceSelected = true
 			interfaceSelectedForNode = true
-			if policy.GetName() != consts.DefaultPolicyName && policy.Spec.NumVfs == 0 {
-				return nil, fmt.Errorf("numVfs(%d) in CR %s is not allowed", policy.Spec.NumVfs, policy.GetName())
-			}
 			if policy.Spec.NumVfs > iface.TotalVfs && iface.Vendor == IntelID {
 				return nil, fmt.Errorf("numVfs(%d) in CR %s exceed the maximum allowed value(%d) interface(%s)", policy.Spec.NumVfs, policy.GetName(), iface.TotalVfs, iface.Name)
 			}

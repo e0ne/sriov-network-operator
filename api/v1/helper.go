@@ -437,24 +437,24 @@ func (p *SriovNetworkNodePolicy) Apply(state *SriovNetworkNodeState, equalPriori
 				ExternallyManaged: p.Spec.ExternallyManaged,
 				DevlinkParams:     p.Spec.DevlinkParams,
 			}
-			if p.Spec.NumVfs > 0 {
+			if p.Spec.NumVfs >= 0 {
 				group, err := p.generatePfNameVfGroup(&iface)
 				if err != nil {
 					return err
 				}
 				result.VfGroups = []VfGroup{*group}
-				found := false
-				for i := range state.Spec.Interfaces {
-					if state.Spec.Interfaces[i].PciAddress == result.PciAddress {
-						found = true
-						state.Spec.Interfaces[i].mergeConfigs(&result, equalPriority)
-						state.Spec.Interfaces[i] = result
-						break
-					}
+			}
+			found := false
+			for i := range state.Spec.Interfaces {
+				if state.Spec.Interfaces[i].PciAddress == result.PciAddress {
+					found = true
+					state.Spec.Interfaces[i].mergeConfigs(&result, equalPriority)
+					state.Spec.Interfaces[i] = result
+					break
 				}
-				if !found {
-					state.Spec.Interfaces = append(state.Spec.Interfaces, result)
-				}
+			}
+			if !found {
+				state.Spec.Interfaces = append(state.Spec.Interfaces, result)
 			}
 		}
 	}
